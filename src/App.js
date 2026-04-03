@@ -98,7 +98,7 @@ function AuthPage({ page, setPage, showToast }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 420, animation: "fadeIn .5s ease" }}>
-        <div style={{ textAlign: "center", marginBottom: 40 }}><div style={{ width: 64, height: 64, borderRadius: 16, margin: "0 auto 16px", background: "linear-gradient(135deg,#10B981,#059669)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 700, color: "#fff", boxShadow: "0 8px 32px rgba(16,185,129,.3)" }}>¥</div><h1 style={{ fontSize: 24, fontWeight: 700, color: "#F1F5F9" }}>Kaikei</h1><p style={{ color: "#64748B", fontSize: 14, marginTop: 4 }}>シンプル会計ソフト</p></div>
+        <div style={{ textAlign: "center", marginBottom: 40 }}><div style={{ width: 64, height: 64, borderRadius: 16, margin: "0 auto 16px", background: "linear-gradient(135deg,#10B981,#059669)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 700, color: "#fff", boxShadow: "0 8px 32px rgba(16,185,129,.3)" }}>¥</div><h1 style={{ fontSize: 24, fontWeight: 700, color: "#F1F5F9" }}>A4-Kaikei</h1><p style={{ color: "#64748B", fontSize: 14, marginTop: 4 }}>A4共益費管理システム</p></div>
         <div style={{ background: "#1E293B", borderRadius: 16, padding: 32, border: "1px solid #334155" }}>
           <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 24, color: "#F1F5F9" }}>{page === "login" ? "ログイン" : "新規登録"}</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -130,7 +130,7 @@ function MainLayout({ profile, user, page, setPage, logout, showToast, setProfil
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <div style={{ width: 220, background: "#1E293B", borderRight: "1px solid #334155", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
-        <div style={{ padding: "20px 16px", borderBottom: "1px solid #334155" }}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 34, height: 34, borderRadius: 9, background: "linear-gradient(135deg,#10B981,#059669)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#fff" }}>¥</div><div><div style={{ fontSize: 13, fontWeight: 600, color: "#F1F5F9" }}>Kaikei</div><div style={{ fontSize: 10, color: "#64748B", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.companyName}</div></div></div></div>
+        <div style={{ padding: "20px 16px", borderBottom: "1px solid #334155" }}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 34, height: 34, borderRadius: 9, background: "linear-gradient(135deg,#10B981,#059669)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#fff" }}>¥</div><div><div style={{ fontSize: 13, fontWeight: 600, color: "#F1F5F9" }}>A4-Kaikei</div><div style={{ fontSize: 10, color: "#64748B", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.companyName}</div></div></div></div>
         <nav style={{ padding: "10px 8px", flex: 1 }}>{nav.map(n => <button key={n.id} onClick={() => setPage(n.id)} style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "9px 11px", borderRadius: 7, border: "none", cursor: "pointer", background: page === n.id ? "rgba(16,185,129,.15)" : "transparent", color: page === n.id ? "#34D399" : "#94A3B8", fontSize: 13, fontWeight: page === n.id ? 600 : 400, marginBottom: 2, textAlign: "left" }}><span style={{ fontSize: 15 }}>{n.icon}</span> {n.label}</button>)}</nav>
         <div style={{ padding: "14px 12px", borderTop: "1px solid #334155" }}>
           <div style={{ fontSize: 11, color: "#64748B", marginBottom: 4, padding: "0 6px" }}>{profile.email}</div>
@@ -140,7 +140,7 @@ function MainLayout({ profile, user, page, setPage, logout, showToast, setProfil
       </div>
       <div style={{ flex: 1, padding: 28, overflowY: "auto", maxHeight: "100vh" }}>
         <div style={{ maxWidth: 960, margin: "0 auto", animation: "fadeIn .3s ease" }}>
-          {!isAdmin && <ReadOnlyBanner />}
+          {!isAdmin && page !== "invoices" && <ReadOnlyBanner />}
           {page === "dashboard" && <Dashboard user={user} profile={profile} setPage={setPage} />}
           {page === "journal" && <JournalEntry user={user} showToast={showToast} setPage={setPage} />}
           {page === "ledger" && <Ledger user={user} showToast={showToast} />}
@@ -267,7 +267,6 @@ function InvoicesPage({ user, profile, showToast }) {
   }, [form.items]);
 
   const saveInvoice = async () => {
-    if (!isAdmin) return;
     if (!form.client) return showToast("買い出し先を入力してください", "error");
     if (!file) return showToast("領収書ファイルを添付してください", "error");
     setIsSaving(true);
@@ -292,7 +291,7 @@ function InvoicesPage({ user, profile, showToast }) {
 
   return (
     <div>
-      <PageTitle right={isAdmin && <Btn onClick={() => setShowForm(!showForm)}>{showForm ? "閉じる" : "新規申請"}</Btn>}>
+      <PageTitle right={<Btn onClick={() => setShowForm(!showForm)}>{showForm ? "閉じる" : "新規申請"}</Btn>}>
         請求書・立替申請
       </PageTitle>
 
@@ -379,31 +378,85 @@ function InvoicesPage({ user, profile, showToast }) {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "monospace", color: "#F1F5F9" }}>{fmtYen(inv.total)}</div>
-                  {isAdmin && (
-                    <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                      {inv.status === "draft" && <Btn variant="accent" onClick={async () => {
-                        await updateDoc(doc(db, "invoices", inv.id), { status: "sent" }); load();
-                      }} style={{ fontSize: 11 }}>承認</Btn>}
-                      {inv.status === "sent" && (
-                        <div style={{ display: "flex", gap: 4, background: "#0F172A", padding: 2, borderRadius: 6, border: "1px solid #334155" }}>
-                          <select style={{ ...inputBase, border: "none", fontSize: 11, width: "auto" }} value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)}>
-                            {accountList.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-                          </select>
-                          <Btn onClick={async () => {
-                            const entryId = uid();
-                            await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", account: selectedAccount, amount: inv.total, tax: inv.tax, note: `自動: ${inv.client}`, companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(), fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl });
-                            await updateDoc(doc(db, "invoices", inv.id), { status: "paid", linkedEntryId: entryId }); load();
-                          }} style={{ fontSize: 11 }}>完了</Btn>
-                        </div>
-                      )}
-                      <button style={{ background: "#1E293B", border: "1px solid #334155", color: "#EF4444", padding: "4px 8px", borderRadius: 4, fontSize: 11, cursor: "pointer" }} onClick={async () => {
-                        if (!window.confirm("削除しますか？")) return;
-                        if (inv.receiptDriveId) await gasDelete(inv.receiptDriveId);
-                        if (inv.linkedEntryId) await deleteDoc(doc(db, "entries", inv.linkedEntryId));
-                        await deleteDoc(doc(db, "invoices", inv.id)); load();
-                      }}>削除</button>
-                    </div>
-                  )}
+                    {isAdmin && (
+                      <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        {/* 管理者のみ：下書き状態なら承認ボタンを表示 */}
+                        {inv.status === "draft" && (
+                          <Btn 
+                            variant="accent" 
+                            onClick={async () => {
+                              await updateDoc(doc(db, "invoices", inv.id), { status: "sent" }); 
+                              load();
+                            }} 
+                            style={{ fontSize: 11 }}
+                          >
+                            承認
+                          </Btn>
+                        )}
+                    
+                        {/* 管理者のみ：送信済み状態なら完了（仕訳登録）ボタンを表示 */}
+                        {inv.status === "sent" && (
+                          <div style={{ display: "flex", gap: 4, background: "#0F172A", padding: 2, borderRadius: 6, border: "1px solid #334155" }}>
+                            <select 
+                              style={{ ...inputBase, border: "none", fontSize: 11, width: "auto" }} 
+                              value={selectedAccount} 
+                              onChange={e => setSelectedAccount(e.target.value)}
+                            >
+                              {accountList.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                            </select>
+                            <Btn 
+                              onClick={async () => {
+                                const entryId = uid();
+                                await setDoc(doc(db, "entries", entryId), { 
+                                  date: inv.dueDate || fmtDate(new Date()), 
+                                  type: "expense", 
+                                  account: selectedAccount, 
+                                  amount: inv.total, 
+                                  tax: inv.tax, 
+                                  note: `自動: ${inv.client}`, 
+                                  companyName: inv.companyName, 
+                                  createdBy: user.uid, 
+                                  createdAt: serverTimestamp(), 
+                                  fromInvoiceId: inv.id, 
+                                  receiptUrl: inv.receiptUrl 
+                                });
+                                await updateDoc(doc(db, "invoices", inv.id), { status: "paid", linkedEntryId: entryId }); 
+                                load();
+                              }} 
+                              style={{ fontSize: 11 }}
+                            >
+                              完了
+                            </Btn>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* 削除ボタン：管理者 または 作成者本人のみ表示 */}
+                    {(isAdmin || inv.createdBy === user.uid) && (
+                      <div style={{ textAlign: "right", marginTop: 8 }}>
+                        <button 
+                          style={{ 
+                            background: "#1E293B", 
+                            border: "1px solid #334155", 
+                            color: "#EF4444", 
+                            padding: "4px 8px", 
+                            borderRadius: 4, 
+                            fontSize: 11, 
+                            cursor: "pointer" 
+                          }} 
+                          onClick={async () => {
+                            if (!window.confirm("削除しますか？")) return;
+                            if (inv.receiptDriveId) await gasDelete(inv.receiptDriveId);
+                            if (inv.linkedEntryId) await deleteDoc(doc(db, "entries", inv.linkedEntryId));
+                            await deleteDoc(doc(db, "invoices", inv.id)); 
+                            load();
+                          }}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    )}                  
                 </div>
               </div>
             </Card>
@@ -500,7 +553,7 @@ function SettingsPage({ user, profile, setProfile, showToast }) {
                 placeholder="名前または会社名"
               />
               <Btn onClick={handleUpdateAll} disabled={updating}>
-                {updating ? "更新中..." : "一括変更"}
+                {updating ? "更新中..." : "変更"}
               </Btn>
             </div>
             <p style={{ fontSize: 11, color: "#64748B", marginTop: 8 }}>
