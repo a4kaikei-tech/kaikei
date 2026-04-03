@@ -220,13 +220,17 @@ function InvoicesPage({ user, profile, showToast }) {
   const [issaving, setIsSaving] = useState(false);
   const [accountList, setAccountList] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState("");
+  
+  // ファイルアップロード用のState
   const [file, setFile] = useState(null);
 
   const [form, setForm] = useState({ 
     client: "", 
     items: [{ name: "", qty: 1, price: 0, taxRate: 10 }], 
     dueDate: "", 
-    notes: "" 
+    notes: "",
+    receiptUrl: "",      
+    receiptDriveId: ""   
   });
 
   const load = useCallback(async () => {
@@ -263,18 +267,31 @@ function InvoicesPage({ user, profile, showToast }) {
     });
     const tax10 = Math.floor(sub10 * 0.1);
     const tax8 = Math.floor(sub8 * 0.08);
-    return { subtotal: sub10 + sub8 + sub0, tax: tax10 + tax8, total: sub10 + sub8 + sub0 + tax10 + tax8, tax10, tax8 };
+    return { total: sub10 + sub8 + sub0 + tax10 + tax8, tax: tax10 + tax8 };
   }, [form.items]);
 
+  // 保存処理（アップロード機能）
   const saveInvoice = async () => {
     if (!form.client) return showToast("買い出し先を入力してください", "error");
     setIsSaving(true);
     try {
+      let url = form.receiptUrl;
+      let driveId = form.receiptDriveId;
+
+      // 新しいファイルが選択されている場合、GAS経由でアップロード
+      if (file) {
+        const res = await gasUpload(file);
+        url = res.url;
+        driveId = res.id;
+      }
+
       const isEdit = !!form.id;
       const invoiceId = isEdit ? form.id : uid();
       const payload = {
         ...form,
-        total: calc.total, // 計算結果を保存
+        receiptUrl: url,
+        receiptDriveId: driveId,
+        total: calc.total,
         tax: calc.tax,
         updatedAt: serverTimestamp(),
       };
@@ -289,10 +306,14 @@ function InvoicesPage({ user, profile, showToast }) {
   
       await setDoc(doc(db, "invoices", invoiceId), payload, { merge: true });
       showToast(isEdit ? "更新しました" : "申請しました");
-      setForm({ client: "", items: [{ name: "", qty: 1, price: 0, taxRate: 10 }], dueDate: "", notes: "" });
+      
+      // フォームリセット
+      setForm({ client: "", items: [{ name: "", qty: 1, price: 0, taxRate: 10 }], dueDate: "", notes: "", receiptUrl: "", receiptDriveId: "" });
+      setFile(null);
       setShowForm(false);
       load();
     } catch (e) {
+      console.error(e);
       showToast("保存に失敗しました", "error");
     }
     setIsSaving(false);
@@ -300,7 +321,7 @@ function InvoicesPage({ user, profile, showToast }) {
 
   return (
     <div>
-      <PageTitle right={<Btn onClick={() => { setShowForm(!showForm); if(!showForm) setForm({client:"", items:[{name:"", qty:1, price:0, taxRate:10}], dueDate:"", notes:""}); }}>{showForm ? "閉じる" : "新規申請"}</Btn>}>
+      <PageTitle right={<Btn onClick={() => { setShowForm(!showForm); if(!showForm) { setForm({client:"", items:[{name:"", qty:1, price:0, taxRate:10}], dueDate:"", notes:"", receiptUrl:"", receiptDriveId:""}); setFile(null); } }}>{showForm ? "閉じる" : "新規申請"}</Btn>}>
         請求書・立替申請
       </PageTitle>
 
@@ -316,6 +337,13 @@ function InvoicesPage({ user, profile, showToast }) {
                 <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>日付</label>
                 <input type="date" style={{ ...inputBase, colorScheme: "dark" }} value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})} />
               </div>
+            </div>
+
+            {/* ファイルアップロード部分 */}
+            <div>
+              <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>領収書・レシート</label>
+              <input type="file" accept="image/*,application/pdf" onChange={e => setFile(e.target.files[0])} style={{ fontSize: 12, color: "#E2E8F0" }} />
+              {form.receiptUrl && !file && <p style={{ fontSize: 11, color: "#34D399", marginTop: 4 }}>※ 登録済みのファイルがあります</p>}
             </div>
 
             <div>
@@ -348,12 +376,13 @@ function InvoicesPage({ user, profile, showToast }) {
             <div style={{ textAlign: "right", borderTop: "1px solid #334155", paddingTop: 16 }}>
               <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 4 }}>合計金額 (税込)</div>
               <div style={{ fontSize: 24, fontWeight: 800, color: "#F1F5F9", fontFamily: "monospace", marginBottom: 16 }}>{fmtYen(calc.total)}</div>
-              <Btn onClick={saveInvoice} disabled={issaving} style={{ width: "100%" }}>{issaving ? "保存中..." : "申請を保存する"}</Btn>
+              <Btn onClick={saveInvoice} disabled={issaving} style={{ width: "100%" }}>{issaving ? "アップロード中..." : "申請を保存する"}</Btn>
             </div>
           </div>
         </Card>
       )}
 
+      {/* 一覧表示部分は以前のロジックを継続 */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {loading ? <p style={{textAlign:"center", color:"#64748B"}}>読み込み中...</p> : invoices.map(inv => (
           <Card key={inv.id} style={{ padding: 16 }}>
@@ -365,31 +394,23 @@ function InvoicesPage({ user, profile, showToast }) {
               </div>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "monospace", color: "#F1F5F9" }}>{fmtYen(inv.total)}</div>
-                
                 <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
-                  {/* 編集ボタン：管理者は全て、ユーザーは自分の下書きのみ */}
                   {(isAdmin || (inv.createdBy === user.uid && inv.status === "draft")) && (
-                    <button onClick={() => { setForm(inv); setShowForm(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }} style={{ background: "none", border: "1px solid #334155", color: "#94A3B8", padding: "4px 8px", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>編集</button>
+                    <button onClick={() => { setForm(inv); setShowForm(true); setFile(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }} style={{ background: "none", border: "1px solid #334155", color: "#94A3B8", padding: "4px 8px", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>編集</button>
                   )}
-
-                  {/* 承認ボタン：管理者のみ */}
                   {isAdmin && inv.status === "draft" && (
                     <Btn variant="accent" style={{ fontSize: 11, padding: "4px 12px" }} onClick={async () => { await updateDoc(doc(db, "invoices", inv.id), { status: "sent" }); load(); }}>承認</Btn>
                   )}
-
-                  {/* 完了ボタン：管理者のみ */}
                   {isAdmin && inv.status === "sent" && (
                     <Btn variant="primary" style={{ fontSize: 11, padding: "4px 12px" }} onClick={async () => {
                       const entryId = uid();
-                      await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", accountName: selectedAccount, amount: inv.total, taxAmount: inv.tax, description: `自動: ${inv.client}`, createdBy: user.uid, createdAt: serverTimestamp() });
+                      await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", account: selectedAccount, amount: inv.total, tax: inv.tax, note: `自動: ${inv.client}`, companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(), fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl });
                       await updateDoc(doc(db, "invoices", inv.id), { status: "paid", linkedEntryId: entryId });
                       load();
                     }}>完了</Btn>
                   )}
-
-                  {/* 削除ボタン：管理者 または 本人 */}
                   {(isAdmin || inv.createdBy === user.uid) && (
-                    <button onClick={async () => { if (!window.confirm("削除しますか？")) return; await deleteDoc(doc(db, "invoices", inv.id)); load(); }} style={{ background: "none", border: "none", color: "#EF4444", fontSize: 11, cursor: "pointer" }}>削除</button>
+                    <button onClick={async () => { if (!window.confirm("削除しますか？")) return; if (inv.receiptDriveId) await gasDelete(inv.receiptDriveId); await deleteDoc(doc(db, "invoices", inv.id)); load(); }} style={{ background: "none", border: "none", color: "#EF4444", fontSize: 11, cursor: "pointer" }}>削除</button>
                   )}
                 </div>
               </div>
