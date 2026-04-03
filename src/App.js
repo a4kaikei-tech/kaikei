@@ -62,7 +62,17 @@ export default function App() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}} @keyframes toastIn{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box;margin:0;padding:0} input,select,textarea,button{font-family:'Noto Sans JP',sans-serif} input::placeholder,textarea::placeholder{color:#475569} ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#1E293B}::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}`}</style>
       {toast && <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: toast.type === "error" ? "#DC2626" : "#059669", color: "#fff", padding: "10px 24px", borderRadius: 8, fontSize: 14, fontWeight: 500, animation: "toastIn .3s ease", boxShadow: "0 8px 32px rgba(0,0,0,.3)" }}>{toast.msg}</div>}
       {(!user || !profile) && <AuthPage page={page} setPage={setPage} showToast={showToast} />}
-      {user && profile && <MainLayout profile={profile} user={user} page={page} setPage={setPage} logout={() => signOut(auth)} showToast={showToast} />}
+      {user && profile && (
+        <MainLayout 
+          profile={profile} 
+          setProfile={setProfile} 
+          user={user} 
+          page={page} 
+          setPage={setPage} 
+          logout={() => signOut(auth)} 
+          showToast={showToast} 
+        />
+      )}
     </div>
     </RoleCtx.Provider>
   );
@@ -136,7 +146,7 @@ function MainLayout({ profile, user, page, setPage, logout, showToast }) {
           {page === "ledger" && <Ledger user={user} showToast={showToast} />}
           {page === "invoices" && <InvoicesPage user={user} profile={profile} showToast={showToast} />}
           {page === "receipts" && <Receipts user={user} showToast={showToast} />}
-          {page === "settings" && <SettingsPage user={user} profile={profile} showToast={showToast} />}
+          {page === "settings" && <SettingsPage user={user} profile={profile} setProfile={setProfile} showToast={showToast} />}
           {page === "accounts" && <AccountsPage user={user} showToast={showToast} />}
         </div>
       </div>
@@ -420,35 +430,40 @@ function Reports({ user }) {
 }
 
 /* ══════════════════ SETTINGS ══════════════════ */
-function SettingsPage({ user, showToast }) {
-  const [newName, setNewName] = useState(user.companyName || "");
+function SettingsPage({ user, profile, setProfile, showToast }) {
+  // 初期値に profile.companyName を使用
+  const [newName, setNewName] = useState(profile?.companyName || "");
   const [updating, setUpdating] = useState(false);
   
-// ユーザー名の更新処理
   const handleUpdateName = async () => {
     if (!newName.trim()) return showToast("名前を入力してください", "error");
     setUpdating(true);
     try {
-      // 1. Firebase Authのプロフィールを更新
-      await updateProfile(user, { companyName: newName });
+      // 1. Firebase Authのプロフィール表示名を更新
+      await updateProfile(user, { displayName: newName });
       
-      // 2. Firestore側のデータも同期
-      await updateDoc(doc(db, "users", user.uid), { 
+      // 2. Firestore側のユーザーデータを更新
+      const userRef = doc(db, "users", user.uid);
+      await updateDoc(userRef, { 
         companyName: newName 
       });
 
-      // 3. ★重要：Auth情報をリロードして画面表示を更新
-      // これにより、App.jsなどで監視しているuserオブジェクトが最新になります
+      // 3. ★重要：ReactのStateを更新（これでサイドバーやダッシュボードが即座に変わる）
+      if (setProfile) {
+        setProfile({ ...profile, companyName: newName });
+      }
+
+      // 4. Auth情報のキャッシュを最新にする
       await user.reload();
       
-      showToast("ユーザー名を更新しました。反映されない場合は再読み込みしてください");
+      showToast("プロフィールを更新しました");
     } catch (e) {
+      console.error(e);
       showToast("更新に失敗しました", "error");
     }
     setUpdating(false);
   };
   
-  // パスワード再設定メールの送信
   const handleResetPassword = async () => {
     if (!window.confirm("パスワード再設定用のメールを送信しますか？")) return;
     try {
@@ -458,64 +473,45 @@ function SettingsPage({ user, showToast }) {
       showToast("メール送信に失敗しました", "error");
     }
   };
+
   return (
-  <Card style={{ marginTop: 24 }}>
-  <h3 style={{ fontSize: 16, fontWeight: 600, color: "#F1F5F9", marginBottom: 20 }}>アカウント設定</h3>
-  
-  <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-    {/* ユーザー名の変更セクション */}
     <div>
-      <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
-        ユーザー名
-      </label>
-      <div style={{ display: "flex", gap: 8 }}>
-        <input 
-          style={inputBase} 
-          value={newName} 
-          onChange={e => setNewName(e.target.value)} 
-          placeholder="新しい名前を入力"
-        />
-        <Btn 
-          onClick={handleUpdateName} 
-          disabled={updating} 
-          style={{ whiteSpace: "nowrap", padding: "0 20px" }}
-        >
-          {updating ? "保存中..." : "変更"}
-        </Btn>
-      </div>
+      <PageTitle sub="アカウント情報の管理">設定</PageTitle>
+      <Card style={{ marginTop: 8 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: "#F1F5F9", marginBottom: 20 }}>アカウント設定</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          <div>
+            <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
+              ユーザー名 / 会社名
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input 
+                style={inputBase} 
+                value={newName} 
+                onChange={e => setNewName(e.target.value)} 
+                placeholder="名前を入力"
+              />
+              <Btn onClick={handleUpdateName} disabled={updating}>
+                {updating ? "保存中..." : "変更"}
+              </Btn>
+            </div>
+          </div>
+          <hr style={{ border: "none", borderTop: "1px solid #334155" }} />
+          <div>
+            <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>セキュリティ</label>
+            <div style={{ background: "#0F172A", padding: 16, borderRadius: 8, border: "1px solid #334155" }}>
+              <p style={{ fontSize: 13, color: "#E2E8F0", marginBottom: 12 }}>
+                パスワードを変更する場合は、登録済みのメールアドレス（{user.email}）にリンクを送信します。
+              </p>
+              <button onClick={handleResetPassword} style={{ background: "none", border: "1px solid #60A5FA", color: "#60A5FA", padding: "8px 16px", borderRadius: 6, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+                パスワード再設定メールを送信
+              </button>
+            </div>
+          </div>
+        </div>
+      </Card>
     </div>
-
-    <hr style={{ border: "none", borderTop: "1px solid #334155" }} />
-
-    {/* パスワード再設定セクション */}
-    <div>
-      <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
-        セキュリティ
-      </label>
-      <div style={{ background: "#0F172A", padding: 16, borderRadius: 8, border: "1px solid #334155" }}>
-        <p style={{ fontSize: 13, color: "#E2E8F0", marginBottom: 12 }}>
-          パスワードを変更する場合は、登録済みのメールアドレス（{user.email}）に再設定用のリンクを送信します。
-        </p>
-        <button 
-          onClick={handleResetPassword}
-          style={{ 
-            background: "none", 
-            border: "1px solid #60A5FA", 
-            color: "#60A5FA", 
-            padding: "8px 16px", 
-            borderRadius: 6, 
-            fontSize: 13, 
-            cursor: "pointer",
-            fontWeight: 600
-          }}
-        >
-          パスワード再設定メールを送信
-        </button>
-      </div>
-    </div>
-  </div>
-</Card>
-  )
+  );
 }
 
 /* ══════════════════ ACCOUNTS ══════════════════ */
