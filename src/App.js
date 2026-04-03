@@ -292,13 +292,27 @@ function InvoicesPage({ user, profile, showToast }) {
                 <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>買い出し先</label>
                 <input style={inputBase} placeholder="店舗名" value={form.client} onChange={e => setForm({...form, client: e.target.value})} />
               </div>
-              <div>
-                <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>BLK会議の日程</label>
-                <input type="date" style={{ ...inputBase, colorScheme: "dark", filter: "invert(1) brightness(100%)", cursor: "pointer" }} value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})} onClick={(e) => e.target.showPicker && e.target.showPicker()} />
-              </div>
+            <div>
+              <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>
+                BLKの日程
+              </label>
+              <input 
+                type="date" 
+                style={{ 
+                  ...inputBase, 
+                  colorScheme: "dark",               // ブラウザのUI（カレンダーの中身）をダーク対応に
+                  filter: "invert(1) brightness(100%)", // ★重要：黒いアイコンを白く反転
+                  cursor: "pointer",
+                  display: "block"
+                }} 
+                value={date} 
+                onChange={e => setDate(e.target.value)} 
+                onClick={(e) => e.target.showPicker && e.target.showPicker()} 
+              />
+            </div>
             </div>
 
-            {/* 明細部分 (addItemなどを使わず直接記述) */}
+            {/* 明細部分*/}
             <div>
               <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>購入明細</label>
               {form.items.map((item, i) => (
