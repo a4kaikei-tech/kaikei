@@ -297,18 +297,17 @@ function InvoicesPage({ user, profile, showToast }) {
                 BLKの日程
               </label>
               <input 
-                type="date" 
-                style={{ 
-                  ...inputBase, 
-                  colorScheme: "dark",               // ブラウザのUI（カレンダーの中身）をダーク対応に
-                  filter: "invert(1) brightness(100%)", // ★重要：黒いアイコンを白く反転
-                  cursor: "pointer",
-                  display: "block"
-                }} 
-                value={date} 
-                onChange={e => setDate(e.target.value)} 
-                onClick={(e) => e.target.showPicker && e.target.showPicker()} 
-              />
+                  type="date" 
+                  style={{ 
+                    ...inputBase, 
+                    colorScheme: "dark",                  // カレンダー内UIをダークモード対応に
+                    filter: "invert(1) brightness(100%)",    // ★重要：アイコンを白く反転させる
+                    cursor: "pointer"
+                  }} 
+                  value={date} 
+                  onChange={e => setDate(e.target.value)} 
+                  onClick={(e) => e.target.showPicker && e.target.showPicker()} // 枠内クリックでカレンダー展開
+                />
             </div>
             </div>
 
