@@ -136,7 +136,7 @@ function MainLayout({ profile, user, page, setPage, logout, showToast }) {
           {page === "ledger" && <Ledger user={user} showToast={showToast} />}
           {page === "invoices" && <InvoicesPage user={user} profile={profile} showToast={showToast} />}
           {page === "receipts" && <Receipts user={user} showToast={showToast} />}
-          {page === "settings" && <Settings user={user} profile={profile} showToast={showToast} />}
+          {page === "settings" && <SettingsPage user={user} profile={profile} showToast={showToast} />}
           {page === "accounts" && <AccountsPage user={user} showToast={showToast} />}
         </div>
       </div>
