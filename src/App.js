@@ -69,49 +69,38 @@ export default function App() {
 
 /* ══════════════════ AUTH ══════════════════ */
 function AuthPage({ page, setPage, showToast }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const handleLogin = async () => {
-    if (!email || !password) return showToast("入力してください", "error");
+  const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [companyName, setCompanyName] = useState("");
+  const [role, setRole] = useState("member"); const [busy, setBusy] = useState(false);
+  const handleLogin = async () => { if (!email || !password) return showToast("入力してください", "error"); setBusy(true); try { await signInWithEmailAndPassword(auth, email, password); } catch { showToast("ログインに失敗しました", "error"); } setBusy(false); };
+  const handleRegister = async () => {
+    if (!email || !password || !companyName) return showToast("すべて入力してください", "error");
+    if (password.length < 6) return showToast("パスワードは6文字以上", "error");
     setBusy(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch {
-      showToast("ログインに失敗しました", "error");
-    }
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await setDoc(doc(db, "users", cred.user.uid), { uid: cred.user.uid, email, companyName, role, createdAt: serverTimestamp(), fiscalYearStart: 4 });
+      if (role === "admin") { const snap = await getDoc(doc(db, "settings", "accounts")); if (!snap.exists()) await setDoc(doc(db, "settings", "accounts"), { list: DEFAULT_ACCOUNTS }); }
+      showToast("登録完了！");
+    } catch (e) { showToast("登録失敗: " + e.code, "error"); }
     setBusy(false);
   };
-
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 420 }}>
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{ /* ロゴのスタイル（中略） */ }}>¥</div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: "#F1F5F9" }}>Kaikei</h1>
-          <p style={{ color: "#64748B", fontSize: 14, marginTop: 4 }}>シンプル会計ソフト</p>
-        </div>
-
+      <div style={{ width: "100%", maxWidth: 420, animation: "fadeIn .5s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}><div style={{ width: 64, height: 64, borderRadius: 16, margin: "0 auto 16px", background: "linear-gradient(135deg,#10B981,#059669)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 700, color: "#fff", boxShadow: "0 8px 32px rgba(16,185,129,.3)" }}>¥</div><h1 style={{ fontSize: 24, fontWeight: 700, color: "#F1F5F9" }}>Kaikei</h1><p style={{ color: "#64748B", fontSize: 14, marginTop: 4 }}>シンプル会計ソフト</p></div>
         <div style={{ background: "#1E293B", borderRadius: 16, padding: 32, border: "1px solid #334155" }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 24, color: "#F1F5F9" }}>ログイン</h2>
-          
+          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 24, color: "#F1F5F9" }}>{page === "login" ? "ログイン" : "新規登録"}</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {/* 会社名やロール選択の入力を削除 */}
-            <div>
-              <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>メールアドレス</label>
-              <input style={inputBase} type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>パスワード</label>
-              <input style={inputBase} type="password" placeholder="••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} />
-            </div>
-            <button onClick={handleLogin} disabled={busy} style={{ width: "100%", padding: 12, borderRadius: 8, border: "none", cursor: "pointer", background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff", fontSize: 15, fontWeight: 600, marginTop: 8, opacity: busy ? .6 : 1 }}>
-              {busy ? "処理中..." : "ログイン"}
-            </button>
+            {page === "register" && <>
+              <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>会社名 / 屋号</label><input style={inputBase} placeholder="株式会社サンプル" value={companyName} onChange={e => setCompanyName(e.target.value)} /></div>
+              <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>アカウントの種類</label>
+              </div>
+            </>}
+            <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>メールアドレス</label><input style={inputBase} type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} /></div>
+            <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>パスワード</label><input style={inputBase} type="password" placeholder="••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && (page === "login" ? handleLogin() : handleRegister())} /></div>
+            <button onClick={page === "login" ? handleLogin : handleRegister} disabled={busy} style={{ width: "100%", padding: 12, borderRadius: 8, border: "none", cursor: "pointer", background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff", fontSize: 15, fontWeight: 600, marginTop: 8, opacity: busy ? .6 : 1 }}>{busy ? "処理中..." : page === "login" ? "ログイン" : "登録する"}</button>
           </div>
-
-          {/* 「新規登録はこちら」の切り替えボタンを削除 */}
+          <div style={{ textAlign: "center", marginTop: 20 }}><button onClick={() => setPage(page === "login" ? "register" : "login")} style={{ background: "none", border: "none", color: "#34D399", cursor: "pointer", fontSize: 13 }}>{page === "login" ? "新規登録はこちら →" : "ログインはこちら →"}</button></div>
         </div>
       </div>
     </div>
