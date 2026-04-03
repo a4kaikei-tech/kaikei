@@ -416,7 +416,7 @@ function MainLayout({ profile, user, page, setPage, logout, showToast, setProfil
       ];
 
   useEffect(() => {
-    if (!isAdmin && (page === "journal" || page === "accounts" || page === "receipts")) {
+    if (!isAdmin && (page === "journal" || page === "accounts") {
       setPage("dashboard");
     }
   }, [isAdmin, page, setPage]);
@@ -614,7 +614,6 @@ function MainLayout({ profile, user, page, setPage, logout, showToast, setProfil
           {page === "journal" && isAdmin && <JournalEntry user={user} showToast={showToast} setPage={setPage} />}
           {page === "ledger" && <Ledger user={user} showToast={showToast} />}
           {page === "invoices" && <InvoicesPage user={user} profile={profile} showToast={showToast} />}
-          {page === "receipts" && isAdmin && <Receipts user={user} showToast={showToast} />}
           {page === "settings" && <SettingsPage user={user} profile={profile} showToast={showToast} setProfile={setProfile} />}
           {page === "accounts" && isAdmin && <AccountsPage user={user} showToast={showToast} />}
         </div>
@@ -1175,7 +1174,7 @@ function Ledger({ user, showToast }) {
 }
 
 /* ══════════════════ INVOICES ══════════════════ */
-function Ledger({ user, showToast }) {
+function invoicePages({ user, showToast }) {
   const { isAdmin } = useRole();
   const { isMobile } = useResponsive();
 
