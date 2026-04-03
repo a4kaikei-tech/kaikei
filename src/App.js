@@ -6,7 +6,7 @@ import {
 } from "firebase/auth";
 import {
   doc, setDoc, getDoc, getDocs, deleteDoc, updateDoc,
-  collection, query, serverTimestamp, Timestamp,
+  collection, query, where, serverTimestamp, Timestamp,
 } from "firebase/firestore";
 import { updateProfile, sendPasswordResetEmail } from "firebase/auth";
 
@@ -408,18 +408,41 @@ const saveInvoice = async () => {
                     <button onClick={() => { setForm(inv); setShowForm(true); setFile(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }} style={{ background: "none", border: "1px solid #334155", color: "#94A3B8", padding: "4px 8px", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>編集</button>
                   )}
                   {isAdmin && inv.status === "draft" && (
-                    <Btn variant="accent" style={{ fontSize: 11, padding: "4px 12px" }} onClick={async () => { await updateDoc(doc(db, "invoices", inv.id), { status: "sent" }); load(); }}>承認</Btn>
+                    <Btn variant="accent" style={{ fontSize: 11, padding: "4px 12px" }} onClick={async () => { await updateDoc(doc(db, "invoices", inv.id), { status: "sent" }); showToast("承認しました"); load(); }}>承認</Btn>
                   )}
-                  {isAdmin && inv.status === "sent" && (
+                  {isAdmin && inv.status === "sent" && (<>
+                    <select value={inv._selAccount || ""} onChange={e => { inv._selAccount = e.target.value; setInvoices([...invoices]); }}
+                      style={{ padding: "3px 6px", fontSize: 11, background: "#0F172A", border: "1px solid #334155", borderRadius: 4, color: "#E2E8F0", maxWidth: 120 }}>
+                      <option value="">科目を選択</option>
+                      {accountList.filter(a => a.type === "expense").map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                    </select>
                     <Btn variant="primary" style={{ fontSize: 11, padding: "4px 12px" }} onClick={async () => {
+                      const acct = inv._selAccount || selectedAccount;
+                      if (!acct) return showToast("科目を選択してください", "error");
                       const entryId = uid();
-                      await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", account: selectedAccount, amount: inv.total, tax: inv.tax, note: `自動: ${inv.client}`, companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(), fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl || "" });
-                      await updateDoc(doc(db, "invoices", inv.id), { status: "paid", linkedEntryId: entryId });
+                      await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", account: acct, amount: inv.total, tax: inv.tax, note: `自動: ${inv.client}`, companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(), fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl || "" });
+                      await updateDoc(doc(db, "invoices", inv.id), { status: "paid", linkedEntryId: entryId, account: acct });
+                      showToast("完了しました — 仕訳を自動登録しました");
                       load();
                     }}>完了</Btn>
-                  )}
+                  </>)}
                   {(isAdmin || inv.createdBy === user.uid) && (
-                    <button onClick={async () => { if (!window.confirm("削除しますか？")) return; if (inv.receiptDriveId) await gasDelete(inv.receiptDriveId); await deleteDoc(doc(db, "invoices", inv.id)); load(); }} style={{ background: "none", border: "none", color: "#EF4444", fontSize: 11, cursor: "pointer" }}>削除</button>
+                    <button onClick={async () => {
+                      if (!window.confirm("削除しますか？\n関連する仕訳データも削除されます。")) return;
+                      // 領収書ファイルを削除
+                      if (inv.receiptDriveId) try { await gasDelete(inv.receiptDriveId); } catch {}
+                      // 紐づく仕訳を削除
+                      if (inv.linkedEntryId) try { await deleteDoc(doc(db, "entries", inv.linkedEntryId)); } catch {}
+                      // fromInvoiceId で紐づく仕訳も検索して削除
+                      try {
+                        const linked = await getDocs(query(collection(db, "entries"), where("fromInvoiceId", "==", inv.id)));
+                        for (const d of linked.docs) { await deleteDoc(doc(db, "entries", d.id)); }
+                      } catch {}
+                      // 請求書本体を削除
+                      await deleteDoc(doc(db, "invoices", inv.id));
+                      showToast("請求書と関連データを削除しました");
+                      load();
+                    }} style={{ background: "none", border: "none", color: "#EF4444", fontSize: 11, cursor: "pointer" }}>削除</button>
                   )}
                 </div>
               </div>
