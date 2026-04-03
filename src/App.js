@@ -117,7 +117,7 @@ function AuthPage({ page, setPage, showToast }) {
 }
 
 /* ══════════════════ LAYOUT ══════════════════ */
-function MainLayout({ profile, user, page, setPage, logout, showToast }) {
+function MainLayout({ profile, user, page, setPage, logout, showToast, setProfile }) {
   const { isAdmin } = useRole();
   const nav = [
     { id: "dashboard", icon: "📊", label: "ダッシュボード" },
