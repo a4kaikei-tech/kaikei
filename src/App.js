@@ -8,6 +8,7 @@ import {
   doc, setDoc, getDoc, getDocs, deleteDoc, updateDoc,
   collection, query, serverTimestamp, Timestamp,
 } from "firebase/firestore";
+import { updateProfile, sendPasswordResetEmail } from "firebase/auth";
 
 /* ── helpers ── */
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -114,6 +115,7 @@ function MainLayout({ profile, user, page, setPage, logout, showToast }) {
     { id: "ledger", icon: "📖", label: "帳簿" },
     { id: "invoices", icon: "📄", label: "請求書" },
     { id: "accounts", icon: "🏷️", label: "勘定科目" },
+    { id: "settings", icon: "⚙️", label: "設定" },
   ];
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -134,6 +136,7 @@ function MainLayout({ profile, user, page, setPage, logout, showToast }) {
           {page === "ledger" && <Ledger user={user} showToast={showToast} />}
           {page === "invoices" && <InvoicesPage user={user} profile={profile} showToast={showToast} />}
           {page === "receipts" && <Receipts user={user} showToast={showToast} />}
+          {page === "settings" && <Settings user={user} profile={profile} showToast={showToast} />}
           {page === "accounts" && <AccountsPage user={user} showToast={showToast} />}
         </div>
       </div>
@@ -414,6 +417,96 @@ function Reports({ user }) {
     <Card style={{ marginBottom: 20 }}><h3 style={{ fontSize: 15, fontWeight: 600, color: "#F1F5F9", marginBottom: 16 }}>経費内訳</h3>{Object.keys(expByAcc).length === 0 ? <p style={{ color: "#475569", fontSize: 13 }}>データがありません</p> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{Object.entries(expByAcc).sort((a, b) => b[1] - a[1]).map(([name, amt]) => <div key={name} style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 13, color: "#94A3B8", minWidth: 100 }}>{name}</span><div style={{ flex: 1, background: "#0F172A", borderRadius: 4, height: 24, overflow: "hidden" }}><div style={{ width: `${(amt / maxExp) * 100}%`, height: "100%", background: "linear-gradient(90deg,#F59E0B,#D97706)", borderRadius: 4 }} /></div><span style={{ fontSize: 13, fontWeight: 600, color: "#E2E8F0", fontFamily: "'Space Mono',monospace", minWidth: 90, textAlign: "right" }}>{fmtYen(amt)}</span></div>)}</div>}</Card>
     <Card style={{ padding: 0, overflow: "hidden" }}><h3 style={{ fontSize: 15, fontWeight: 600, color: "#F1F5F9", padding: "16px 20px 0" }}>月別推移</h3><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 12 }}><thead><tr style={{ background: "#0F172A" }}>{["月","収入","支出","利益"].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "right", color: "#64748B", fontWeight: 500, fontSize: 12 }}>{h}</th>)}</tr></thead><tbody>{monthlyPL.map(m => <tr key={m.month} style={{ borderTop: "1px solid #334155" }}><td style={{ padding: "8px 14px", textAlign: "right", color: "#94A3B8" }}>{m.month}月</td><td style={{ padding: "8px 14px", textAlign: "right", color: "#10B981", fontFamily: "'Space Mono',monospace" }}>{fmtYen(m.income)}</td><td style={{ padding: "8px 14px", textAlign: "right", color: "#F59E0B", fontFamily: "'Space Mono',monospace" }}>{fmtYen(m.expense)}</td><td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 600, fontFamily: "'Space Mono',monospace", color: m.profit >= 0 ? "#3B82F6" : "#EF4444" }}>{fmtYen(m.profit)}</td></tr>)}</tbody><tfoot><tr style={{ borderTop: "2px solid #475569", background: "#0F172A" }}><td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 600, color: "#F1F5F9" }}>合計</td><td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: "#10B981", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tInc)}</td><td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: "#F59E0B", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tExp)}</td><td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, fontFamily: "'Space Mono',monospace", color: tInc - tExp >= 0 ? "#3B82F6" : "#EF4444" }}>{fmtYen(tInc - tExp)}</td></tr></tfoot></table></Card>
   </div>);
+}
+
+/* ══════════════════ SETTINGS ══════════════════ */
+function SettingsPage({ user, showToast }) {
+    const [newName, setNewName] = useState(user.displayName || "");
+  const [updating, setUpdating] = useState(false);
+  
+  // ユーザー名の更新
+  const handleUpdateName = async () => {
+    if (!newName) return showToast("名前を入力してください", "error");
+    setUpdating(true);
+    try {
+      await updateProfile(user, { displayName: newName });
+      // Firestore側のプロフィールデータも同期させる場合
+      await updateDoc(doc(db, "users", user.uid), { displayName: newName });
+      showToast("ユーザー名を更新しました");
+    } catch (e) {
+      showToast("更新に失敗しました", "error");
+    }
+    setUpdating(false);
+  };
+  
+  // パスワード再設定メールの送信
+  const handleResetPassword = async () => {
+    if (!window.confirm("パスワード再設定用のメールを送信しますか？")) return;
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      showToast("再設定メールを送信しました。メールを確認してください");
+    } catch (e) {
+      showToast("メール送信に失敗しました", "error");
+    }
+  };
+  return (
+  <Card style={{ marginTop: 24 }}>
+  <h3 style={{ fontSize: 16, fontWeight: 600, color: "#F1F5F9", marginBottom: 20 }}>アカウント設定</h3>
+  
+  <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    {/* ユーザー名の変更セクション */}
+    <div>
+      <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
+        ユーザー名
+      </label>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input 
+          style={inputBase} 
+          value={newName} 
+          onChange={e => setNewName(e.target.value)} 
+          placeholder="新しい名前を入力"
+        />
+        <Btn 
+          onClick={handleUpdateName} 
+          disabled={updating} 
+          style={{ whiteSpace: "nowrap", padding: "0 20px" }}
+        >
+          {updating ? "保存中..." : "変更"}
+        </Btn>
+      </div>
+    </div>
+
+    <hr style={{ border: "none", borderTop: "1px solid #334155" }} />
+
+    {/* パスワード再設定セクション */}
+    <div>
+      <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
+        セキュリティ
+      </label>
+      <div style={{ background: "#0F172A", padding: 16, borderRadius: 8, border: "1px solid #334155" }}>
+        <p style={{ fontSize: 13, color: "#E2E8F0", marginBottom: 12 }}>
+          パスワードを変更する場合は、登録済みのメールアドレス（{user.email}）に再設定用のリンクを送信します。
+        </p>
+        <button 
+          onClick={handleResetPassword}
+          style={{ 
+            background: "none", 
+            border: "1px solid #60A5FA", 
+            color: "#60A5FA", 
+            padding: "8px 16px", 
+            borderRadius: 6, 
+            fontSize: 13, 
+            cursor: "pointer",
+            fontWeight: 600
+          }}
+        >
+          パスワード再設定メールを送信
+        </button>
+      </div>
+    </div>
+  </div>
+</Card>
+  )
 }
 
 /* ══════════════════ ACCOUNTS ══════════════════ */
