@@ -271,28 +271,35 @@ function InvoicesPage({ user, profile, showToast }) {
   }, [form.items]);
 
   // 保存処理（アップロード機能）
-  const saveInvoice = async () => {
+const saveInvoice = async () => {
     if (!form.client) return showToast("買い出し先を入力してください", "error");
     setIsSaving(true);
     try {
-      let url = form.receiptUrl;
-      let driveId = form.receiptDriveId;
+      // 初期値を form の値、または空文字に設定（undefinedを回避）
+      let url = form.receiptUrl || "";
+      let driveId = form.receiptDriveId || "";
 
-      // 新しいファイルが選択されている場合、GAS経由でアップロード
+      // 新しいファイルが選択されている場合のみアップロード
       if (file) {
         const res = await gasUpload(file);
-        url = res.url;
-        driveId = res.id;
+        // GASは fileUrl / fileId というフィールド名で返す
+        url = res?.fileUrl || res?.url || "";
+        driveId = res?.fileId || res?.id || "";
       }
 
       const isEdit = !!form.id;
       const invoiceId = isEdit ? form.id : uid();
+
+      // 保存するデータオブジェクトを作成
       const payload = {
-        ...form,
-        receiptUrl: url,
-        receiptDriveId: driveId,
-        total: calc.total,
-        tax: calc.tax,
+        client: form.client || "",
+        items: form.items || [],
+        dueDate: form.dueDate || "",
+        notes: form.notes || "",
+        receiptUrl: url,        // ここが undefined にならないようガード済み
+        receiptDriveId: driveId, // ここが undefined にならないようガード済み
+        total: calc.total || 0,
+        tax: calc.tax || 0,
         updatedAt: serverTimestamp(),
       };
   
@@ -301,10 +308,12 @@ function InvoicesPage({ user, profile, showToast }) {
         payload.createdBy = user.uid;
         payload.createdAt = serverTimestamp();
         payload.status = "draft";
-        payload.companyName = profile?.companyName || user.displayName;
+        payload.companyName = profile?.companyName || user.displayName || "Unknown";
       }
   
+      // setDoc を実行
       await setDoc(doc(db, "invoices", invoiceId), payload, { merge: true });
+      
       showToast(isEdit ? "更新しました" : "申請しました");
       
       // フォームリセット
@@ -313,8 +322,8 @@ function InvoicesPage({ user, profile, showToast }) {
       setShowForm(false);
       load();
     } catch (e) {
-      console.error(e);
-      showToast("保存に失敗しました", "error");
+      console.error("Firebase Save Error:", e);
+      showToast("保存に失敗しました。未入力項目がないか確認してください", "error");
     }
     setIsSaving(false);
   };
@@ -404,7 +413,7 @@ function InvoicesPage({ user, profile, showToast }) {
                   {isAdmin && inv.status === "sent" && (
                     <Btn variant="primary" style={{ fontSize: 11, padding: "4px 12px" }} onClick={async () => {
                       const entryId = uid();
-                      await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", account: selectedAccount, amount: inv.total, tax: inv.tax, note: `自動: ${inv.client}`, companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(), fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl });
+                      await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", account: selectedAccount, amount: inv.total, tax: inv.tax, note: `自動: ${inv.client}`, companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(), fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl || "" });
                       await updateDoc(doc(db, "invoices", inv.id), { status: "paid", linkedEntryId: entryId });
                       load();
                     }}>完了</Btn>
