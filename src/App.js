@@ -424,15 +424,24 @@ function SettingsPage({ user, showToast }) {
     const [newName, setNewName] = useState(user.displayName || "");
   const [updating, setUpdating] = useState(false);
   
-  // ユーザー名の更新
+// ユーザー名の更新処理
   const handleUpdateName = async () => {
-    if (!newName) return showToast("名前を入力してください", "error");
+    if (!newName.trim()) return showToast("名前を入力してください", "error");
     setUpdating(true);
     try {
+      // 1. Firebase Authのプロフィールを更新
       await updateProfile(user, { displayName: newName });
-      // Firestore側のプロフィールデータも同期させる場合
-      await updateDoc(doc(db, "users", user.uid), { displayName: newName });
-      showToast("ユーザー名を更新しました");
+      
+      // 2. Firestore側のデータも同期
+      await updateDoc(doc(db, "users", user.uid), { 
+        displayName: newName 
+      });
+
+      // 3. ★重要：Auth情報をリロードして画面表示を更新
+      // これにより、App.jsなどで監視しているuserオブジェクトが最新になります
+      await user.reload();
+      
+      showToast("ユーザー名を更新しました。反映されない場合は再読み込みしてください");
     } catch (e) {
       showToast("更新に失敗しました", "error");
     }
