@@ -204,11 +204,20 @@ function Ledger({ user, showToast }) {
 /* ══════════════════ INVOICES ══════════════════ */
 function InvoicesPage({ user, profile, showToast }) {
   const { isAdmin } = useRole();
-  const [invoices, setInvoices] = useState([]);
+  const [invoices, setInvoices] = useState([]); // 内部で持つ
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [accountList, setAccountList] = useState([]);
-  const [selectedAccount, setSelectedAccount] = useState("消耗品費"); // 初期値を一般的なものに
+  const [selectedAccount, setSelectedAccount] = useState("消耗品費");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const s = await getDocs(collection(db, "invoices"));
+    const a = [];
+    s.forEach(d => a.push({ id: d.id, ...d.data() }));
+    setInvoices(a.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+    setLoading(false);
+  }, []);
 
   // フォームの状態
   const [form, setForm] = useState({ 
@@ -217,21 +226,6 @@ function InvoicesPage({ user, profile, showToast }) {
     dueDate: "", 
     notes: "" 
   });
-
-  // データ読み込み
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const s = await getDocs(collection(db, "invoices"));
-      const a = [];
-      s.forEach(d => a.push({ id: d.id, ...d.data() }));
-      // 作成日順にソート
-      setInvoices(a.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-    } catch (e) {
-      showToast("データの取得に失敗しました", "error");
-    }
-    setLoading(false);
-  }, [showToast]);
 
   // 科目リスト読み込み
   const loadAccounts = useCallback(async () => {
