@@ -1174,7 +1174,7 @@ function Ledger({ user, showToast }) {
 }
 
 /* ══════════════════ INVOICES ══════════════════ */
-function InvoicePage({ user, showToast }) {
+function InvoicesPage({ user, showToast }) {
   const { isAdmin } = useRole();
   const { isMobile } = useResponsive();
 
