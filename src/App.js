@@ -30,7 +30,7 @@ const DEFAULT_ACCOUNTS = [
   { id: "purchases", name: "仕入高", type: "expense", group: "売上原価" },{ id: "salary", name: "給与手当", type: "expense", group: "販管費" },{ id: "rent", name: "地代家賃", type: "expense", group: "販管費" },{ id: "utilities", name: "水道光熱費", type: "expense", group: "販管費" },{ id: "communication", name: "通信費", type: "expense", group: "販管費" },{ id: "transport", name: "旅費交通費", type: "expense", group: "販管費" },{ id: "supplies", name: "消耗品費", type: "expense", group: "販管費" },{ id: "entertainment", name: "接待交際費", type: "expense", group: "販管費" },{ id: "advertising", name: "広告宣伝費", type: "expense", group: "販管費" },{ id: "insurance", name: "保険料", type: "expense", group: "販管費" },{ id: "depreciation", name: "減価償却費", type: "expense", group: "販管費" },{ id: "tax", name: "租税公課", type: "expense", group: "販管費" },{ id: "misc_expense", name: "雑費", type: "expense", group: "販管費" },
 ];
 
-const INVOICE_STATUS = { draft: { bg: "#334155", text: "#94A3B8", label: "下書き" }, sent: { bg: "#DBEAFE", text: "#1E40AF", label: "送付済" }, paid: { bg: "#D1FAE5", text: "#065F46", label: "入金済" }, overdue: { bg: "#FEE2E2", text: "#991B1B", label: "期限超過" } };
+const INVOICE_STATUS = { draft: { bg: "#334155", text: "#94A3B8", label: "下書き" }, sent: { bg: "#DBEAFE", text: "#1E40AF", label: "送付済" }, paid: { bg: "#D1FAE5", text: "#065F46", label: '受け渡し済' }, overdue: { bg: "#FEE2E2", text: "#991B1B", label: "期限超過" } };
 const StatusBadge = ({ status }) => { const s = INVOICE_STATUS[status] || { bg: "#334155", text: "#94A3B8", label: status }; return <span style={{ background: s.bg, color: s.text, padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600 }}>{s.label}</span>; };
 
 const ReadOnlyBanner = () => (
@@ -204,18 +204,77 @@ function Ledger({ user, showToast }) {
 /* ══════════════════ INVOICES ══════════════════ */
 function InvoicesPage({ user, profile, showToast }) {
   const { isAdmin } = useRole();
-  const [invoices, setInvoices] = useState([]); const [loading, setLoading] = useState(true); const [showForm, setShowForm] = useState(false);
+  // InvoicesPage コンポーネント内の既存のuseStateなどがある場所に追加
+  const [accountList, setAccountList] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState("仕入高"); // デフォルト値
+  
+  // useEffectなどで科目リストを読み込む（既存のload関数内などに追加）
+  const loadAccounts = async () => {
+    const snap = await getDoc(doc(db, "settings", "accounts"));
+    if (snap.exists()) {
+      // 支出(expense)の科目だけをフィルタリング
+      setAccountList(snap.data().list.filter(a => a.type === "expense"));
+    }
+  };
+  useEffect(() => {
+    load();
+    loadAccounts(); // 科目リストの読み込みを追加
+  }, [load]);
+  const [loading, setLoading] = useState(true); 
+  const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ client: "", items: [{ name: "", qty: 1, price: 0 }], dueDate: "", notes: "" });
   const load = useCallback(async () => { setLoading(true); const s = await getDocs(collection(db, "invoices")); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); setInvoices(a.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))); setLoading(false); }, []);
-  useEffect(() => { load(); }, [load]);
   const addItem = () => setForm({ ...form, items: [...form.items, { name: "", qty: 1, price: 0 }] }); const updateItem = (i, k, v) => { const items = [...form.items]; items[i] = { ...items[i], [k]: k === "name" ? v : Number(v) }; setForm({ ...form, items }); }; const removeItem = (i) => setForm({ ...form, items: form.items.filter((_, idx) => idx !== i) });
   const subtotal = form.items.reduce((s, i) => s + i.qty * i.price, 0); const tax = Math.floor(subtotal * 0.1); const total = subtotal + tax;
   const saveInvoice = async () => { if (!isAdmin) return; if (!form.client) return showToast("取引先を入力してください", "error"); const invNum = `INV-${new Date().getFullYear()}${(new Date().getMonth()+1).toString().padStart(2,"0")}-${Math.floor(Math.random() * 1000).toString().padStart(3,"0")}`; await setDoc(doc(db, "invoices", uid()), { invoiceNumber: invNum, client: form.client, items: form.items, subtotal, tax, total, dueDate: form.dueDate, notes: form.notes, status: "draft", companyName: profile.companyName, createdBy: user.uid, createdAt: serverTimestamp() }); showToast("請求書を作成しました！"); setShowForm(false); setForm({ client: "", items: [{ name: "", qty: 1, price: 0 }], dueDate: "", notes: "" }); load(); };
-  const updateStatus = async (inv, status) => { if (!isAdmin) return showToast("管理者のみ変更できます", "error"); await updateDoc(doc(db, "invoices", inv.id), { status }); showToast("更新しました"); load(); };
+  const updateStatus = async (inv, status) => {
+  if (!isAdmin) return showToast("管理者のみ変更できます", "error");
+
+  try {
+    await updateDoc(doc(db, "invoices", inv.id), { status });
+
+    if (status === "paid") {
+      const entryData = {
+        date: inv.dueDate || fmtDate(new Date()),
+        type: "expense",
+        account: selectedAccount, // ← ここで選択された科目を使用
+        amount: inv.total,
+        tax: inv.tax,
+        note: `【自動】${inv.client} (${inv.invoiceNumber})`,
+        companyName: inv.companyName || profile.companyName,
+        createdBy: user.uid,
+        createdAt: serverTimestamp()
+      };
+
+      await setDoc(doc(db, "entries", uid()), entryData);
+      showToast(`${selectedAccount}として支出に登録しました`);
+    } else {
+      showToast("更新しました");
+    }
+    load();
+  } catch (e) {
+    showToast("エラーが発生しました", "error");
+  }
+  };
   const deleteInv = async (id) => { if (!isAdmin) return; await deleteDoc(doc(db, "invoices", id)); showToast("削除しました"); load(); };
   return (<div><PageTitle right={isAdmin && <Btn onClick={() => setShowForm(!showForm)}>{showForm ? "✕ 閉じる" : "＋ 新規作成"}</Btn>}>請求書</PageTitle>
     {showForm && isAdmin && <Card style={{ marginBottom: 24, animation: "fadeIn .3s ease" }}><h3 style={{ fontSize: 15, fontWeight: 600, color: "#F1F5F9", marginBottom: 16 }}>請求書作成</h3><div style={{ display: "flex", flexDirection: "column", gap: 16 }}><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}><div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>買い出し先</label><input style={inputBase} value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} placeholder="〇〇店" /></div><div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>承認予定のBLKの日程</label><input type="date" style={{ ...inputBase, colorScheme: "dark" }} value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} /></div></div><div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>明細</label>{form.items.map((item, i) => <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}><input style={{ ...inputBase, flex: 3 }} placeholder="品目" value={item.name} onChange={e => updateItem(i, "name", e.target.value)} /><input style={{ ...inputBase, flex: 1 }} type="number" placeholder="数量" value={item.qty} onChange={e => updateItem(i, "qty", e.target.value)} /><input style={{ ...inputBase, flex: 2 }} type="number" placeholder="単価" value={item.price || ""} onChange={e => updateItem(i, "price", e.target.value)} /><span style={{ fontSize: 13, color: "#94A3B8", minWidth: 80, textAlign: "right", fontFamily: "'Space Mono',monospace" }}>{fmtYen(item.qty * item.price)}</span>{form.items.length > 1 && <button onClick={() => removeItem(i)} style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer" }}>✕</button>}</div>)}<button onClick={addItem} style={{ background: "none", border: "none", color: "#34D399", cursor: "pointer", fontSize: 13 }}>＋ 明細を追加</button></div><div style={{ display: "flex", justifyContent: "flex-end" }}><div style={{ textAlign: "right", fontSize: 13 }}><div style={{ color: "#94A3B8", marginBottom: 4 }}>小計: <span style={{ fontFamily: "'Space Mono',monospace" }}>{fmtYen(subtotal)}</span></div><div style={{ color: "#94A3B8", marginBottom: 4 }}>消費税 (10%): <span style={{ fontFamily: "'Space Mono',monospace" }}>{fmtYen(tax)}</span></div><div style={{ color: "#F1F5F9", fontWeight: 700, fontSize: 16 }}>合計: <span style={{ fontFamily: "'Space Mono',monospace" }}>{fmtYen(total)}</span></div></div></div><div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>備考</label><textarea style={{ ...inputBase, minHeight: 60, resize: "vertical" }} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div><Btn onClick={saveInvoice} style={{ alignSelf: "flex-end" }}>請求書を保存</Btn></div></Card>}
-    {loading ? <p style={{ color: "#64748B" }}>読み込み中...</p> : invoices.length === 0 ? <Card><p style={{ color: "#475569", textAlign: "center", padding: 20 }}>請求書がありません</p></Card> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{invoices.map(inv => <Card key={inv.id} style={{ padding: 18 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}><div><div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}><span style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9", fontFamily: "'Space Mono',monospace" }}>{inv.companyName}</span><StatusBadge status={inv.status} /></div><div style={{ fontSize: 13, color: "#94A3B8" }}>{inv.client}</div><div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{fmtDate(inv.createdAt)} {inv.dueDate && `·BLK会議の日程: ${inv.dueDate}`}</div></div><div style={{ textAlign: "right" }}><div style={{ fontSize: 18, fontWeight: 700, color: "#F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtYen(inv.total)}</div>{isAdmin && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>{inv.status === "draft" && <Btn variant="accent" onClick={() => updateStatus(inv, "sent")} style={{ fontSize: 11, padding: "4px 10px" }}>承認ずみに</Btn>}{inv.status === "sent" && <Btn onClick={() => updateStatus(inv, "paid")} style={{ fontSize: 11, padding: "4px 10px" }}>受け渡し済みに</Btn>}<Btn variant="ghost" onClick={() => deleteInv(inv.id)} style={{ fontSize: 11, padding: "4px 10px", color: "#EF4444" }}>削除</Btn></div>}</div></div></Card>)}</div>}
+    {loading ? <p style={{ color: "#64748B" }}>読み込み中...</p> : invoices.length === 0 ? <Card><p style={{ color: "#475569", textAlign: "center", padding: 20 }}>請求書がありません</p></Card> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{invoices.map(inv => <Card key={inv.id} style={{ padding: 18 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}><div><div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}><span style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9", fontFamily: "'Space Mono',monospace" }}>{inv.companyName}</span><StatusBadge status={inv.status} /></div><div style={{ fontSize: 13, color: "#94A3B8" }}>{inv.client}</div><div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{fmtDate(inv.createdAt)} {inv.dueDate && `·BLK会議の日程: ${inv.dueDate}`}</div></div><div style={{ textAlign: "right" }}><div style={{ fontSize: 18, fontWeight: 700, color: "#F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtYen(inv.total)}</div>{isAdmin && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>{inv.status === "draft" && <Btn variant="accent" onClick={() => updateStatus(inv, "sent")} style={{ fontSize: 11, padding: "4px 10px" }}>承認ずみに</Btn>}{inv.status === "sent" && (
+  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+    <select 
+      style={{ ...inputBase, padding: "4px 8px", fontSize: 11, height: "auto" }}
+      value={selectedAccount}
+      onChange={(e) => setSelectedAccount(e.target.value)}
+    >
+      {accountList.map(a => (
+        <option key={a.id} value={a.name}>{a.name}</option>
+      ))}
+    </select>
+    <Btn onClick={() => updateStatus(inv, "paid")} style={{ fontSize: 11, padding: "4px 10px" }}>
+      支払い済みに
+    </Btn>
+  </div>
+)}<Btn variant="ghost" onClick={() => deleteInv(inv.id)} style={{ fontSize: 11, padding: "4px 10px", color: "#EF4444" }}>削除</Btn></div>}</div></div></Card>)}</div>}
   </div>);
 }
 
