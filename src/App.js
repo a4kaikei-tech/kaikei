@@ -92,9 +92,7 @@ function AuthPage({ page, setPage, showToast }) {
           <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 24, color: "#F1F5F9" }}>{page === "login" ? "ログイン" : "新規登録"}</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {page === "register" && <>
-              <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>会社名 / 屋号</label><input style={inputBase} placeholder="株式会社サンプル" value={companyName} onChange={e => setCompanyName(e.target.value)} /></div>
-              <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>アカウントの種類</label>
-              </div>
+              <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>名前</label><input style={inputBase} placeholder="株式会社サンプル" value={companyName} onChange={e => setCompanyName(e.target.value)} /></div>
             </>}
             <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>メールアドレス</label><input style={inputBase} type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} /></div>
             <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>パスワード</label><input style={inputBase} type="password" placeholder="••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && (page === "login" ? handleLogin() : handleRegister())} /></div>
