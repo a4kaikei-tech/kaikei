@@ -290,14 +290,21 @@ function AuthPage({ page, setPage, showToast }) {
 /* ══════════════════ LAYOUT ══════════════════ */
 function MainLayout({ profile, user, page, setPage, logout, showToast, setProfile }) {
   const { isAdmin } = useRole();
-  const nav = [
-    { id: "dashboard", icon: "📊", label: "ダッシュボード" },
-    { id: "journal", icon: "📒", label: "仕訳入力" },
-    { id: "ledger", icon: "📖", label: "帳簿" },
-    { id: "invoices", icon: "📄", label: "請求書" },
-    { id: "accounts", icon: "🏷️", label: "勘定科目" },
-    { id: "settings", icon: "⚙️", label: "設定" },
-  ];
+  const nav = isAdmin
+    ? [
+        { id: "dashboard", icon: "📊", label: "ダッシュボード" },
+        { id: "journal", icon: "📒", label: "仕訳入力" },
+        { id: "ledger", icon: "📖", label: "帳簿" },
+        { id: "invoices", icon: "📄", label: "請求書" },
+        { id: "accounts", icon: "🏷️", label: "勘定科目" },
+        { id: "settings", icon: "⚙️", label: "設定" },
+      ]
+    : [
+        { id: "dashboard", icon: "📊", label: "ダッシュボード" },
+        { id: "ledger", icon: "📖", label: "帳簿" },
+        { id: "invoices", icon: "📄", label: "請求書" },
+        { id: "settings", icon: "⚙️", label: "設定" },
+      ];
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <div style={{ width: 220, background: "#1E293B", borderRight: "1px solid #334155", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
