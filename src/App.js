@@ -113,7 +113,6 @@ function MainLayout({ profile, user, page, setPage, logout, showToast }) {
     { id: "journal", icon: "📒", label: "仕訳入力" },
     { id: "ledger", icon: "📖", label: "仕訳帳" },
     { id: "invoices", icon: "📄", label: "請求書" },
-    { id: "receipts", icon: "🧾", label: "領収書" },
     { id: "accounts", icon: "🏷️", label: "勘定科目" },
   ];
   return (
@@ -205,11 +204,9 @@ function InvoicesPage({ user, profile, showToast }) {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [issaving, setIsSaving] = useState(false); // 保存中のステータス
+  const [issaving, setIsSaving] = useState(false);
   const [accountList, setAccountList] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState("");
-  
-  // 領収書ファイル用のステート
   const [file, setFile] = useState(null);
 
   const [form, setForm] = useState({ 
@@ -226,7 +223,7 @@ function InvoicesPage({ user, profile, showToast }) {
       const a = [];
       s.forEach(d => a.push({ id: d.id, ...d.data() }));
       setInvoices(a.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-    } catch (e) { showToast("データの読み込みに失敗しました", "error"); }
+    } catch (e) { showToast("読み込み失敗", "error"); }
     setLoading(false);
   }, [showToast]);
 
@@ -243,7 +240,6 @@ function InvoicesPage({ user, profile, showToast }) {
     loadAccounts();
   }, [load]);
 
-  // 税率・合計計算
   const calc = useMemo(() => {
     let sub10 = 0, sub8 = 0, sub0 = 0;
     form.items.forEach(item => {
@@ -257,249 +253,138 @@ function InvoicesPage({ user, profile, showToast }) {
     return { subtotal: sub10 + sub8 + sub0, tax: tax10 + tax8, total: sub10 + sub8 + sub0 + tax10 + tax8, tax10, tax8 };
   }, [form.items]);
 
-  const updateItem = (i, k, v) => {
-    const items = [...form.items];
-    items[i] = { ...items[i], [k]: k === "name" ? v : Number(v) };
-    setForm({ ...form, items });
-  };
-
-  // --- 保存処理（ファイルアップロードを含む） ---
   const saveInvoice = async () => {
     if (!isAdmin) return;
     if (!form.client) return showToast("買い出し先を入力してください", "error");
     if (!file) return showToast("領収書ファイルを添付してください", "error");
-
     setIsSaving(true);
     try {
-      // 1. GASへファイルをアップロード
       const uploadRes = await gasUpload(file);
-      
-      // 2. Firestoreへ保存
       const invId = uid();
       const invNum = `INV-${new Date().getFullYear()}${(new Date().getMonth()+1).toString().padStart(2,"0")}-${Math.floor(Math.random() * 1000).toString().padStart(3,"0")}`;
-      
       await setDoc(doc(db, "invoices", invId), { 
-        id: invId,
-        invoiceNumber: invNum, 
-        client: form.client, 
-        items: form.items, 
+        id: invId, invoiceNumber: invNum, client: form.client, items: form.items, 
         subtotal: calc.subtotal, tax: calc.tax, total: calc.total, 
-        dueDate: form.dueDate, 
-        notes: form.notes, 
-        status: "draft", 
-        companyName: profile.companyName, 
-        createdBy: user.uid, 
-        createdAt: serverTimestamp(),
-        // 領収書情報
-        receiptUrl: uploadRes.fileUrl,
-        receiptDriveId: uploadRes.fileId
+        dueDate: form.dueDate, status: "draft", companyName: profile.companyName, 
+        createdBy: user.uid, createdAt: serverTimestamp(),
+        receiptUrl: uploadRes.fileUrl, receiptDriveId: uploadRes.fileId
       });
-
       showToast("申請を保存しました");
-      setShowForm(false);
-      setFile(null);
+      setShowForm(false); setFile(null);
       setForm({ client: "", items: [{ name: "", qty: 1, price: 0, taxRate: 10 }], dueDate: "", notes: "" });
       load();
-    } catch (e) {
-      showToast("保存に失敗しました: " + e.message, "error");
-    }
+    } catch (e) { showToast("保存失敗: " + e.message, "error"); }
     setIsSaving(false);
   };
 
-  const updateStatus = async (inv, status) => {
-    if (!isAdmin) return;
-    try {
-      let entryId = inv.linkedEntryId || null;
-      if (status === "paid" && !inv.linkedEntryId) {
-        entryId = uid();
-        await setDoc(doc(db, "entries", entryId), {
-          date: inv.dueDate || fmtDate(new Date()),
-          type: "expense", account: selectedAccount, amount: inv.total, tax: inv.tax,
-          note: `自動入力: ${inv.client} (${inv.invoiceNumber})`, 
-          companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(),
-          fromInvoiceId: inv.id,
-          receiptUrl: inv.receiptUrl // 支出データにも領収書URLを引き継ぐ
-        });
-      }
-      await updateDoc(doc(db, "invoices", inv.id), { status, linkedEntryId: entryId });
-      showToast("更新しました");
-      load();
-    } catch (e) { showToast("エラー", "error"); }
-  };
-
-  const deleteInv = async (inv) => {
-    if (!isAdmin || !window.confirm("削除しますか？")) return;
-    try {
-      // 領収書ファイルもGoogleドライブから消す場合
-      if (inv.receiptDriveId) await gasDelete(inv.receiptDriveId);
-      if (inv.linkedEntryId) await deleteDoc(doc(db, "entries", inv.linkedEntryId));
-      await deleteDoc(doc(db, "invoices", inv.id));
-      showToast("削除完了");
-      load();
-    } catch (e) { showToast("削除失敗", "error"); }
-  };
-
   return (
-/* ══════════════════ INVOICES FORM SECTION ══════════════════ */
-<div>
-  <PageTitle right={isAdmin && <Btn onClick={() => setShowForm(!showForm)}>{showForm ? "閉じる" : "新規申請"}</Btn>}>
-    請求書・立替申請
-  </PageTitle>
+    <div>
+      <PageTitle right={isAdmin && <Btn onClick={() => setShowForm(!showForm)}>{showForm ? "閉じる" : "新規申請"}</Btn>}>
+        請求書・立替申請
+      </PageTitle>
 
-  {showForm && (
-    <Card style={{ marginBottom: 24 }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        
-        {/* 1. 基本情報入力（店舗名 & 日付） */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          {/* 店舗名入力 */}
-          <div>
-            <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>
-              買い出し先
-            </label>
-            <input 
-              style={inputBase} 
-              placeholder="店舗名" 
-              value={form.client} 
-              onChange={e => setForm({...form, client: e.target.value})} 
-            />
-          </div>
-
-          {/* 日付入力（カレンダーアイコンを白く修正） */}
-          <div>
-            <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>
-              BLK会議の日程
-            </label>
-            <input 
-              type="date" 
-              style={{ 
-                ...inputBase, 
-                colorScheme: "dark", 
-                filter: "invert(1) brightness(100%)", 
-                cursor: "pointer"
-              }} 
-              value={form.dueDate} 
-              onChange={e => setForm({...form, dueDate: e.target.value})} 
-              onClick={(e) => e.target.showPicker && e.target.showPicker()} 
-            />
-          </div>
-        </div>
-
-        {/* 2. 明細部分 */}
-        <div>
-          <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>
-            購入明細
-          </label>
-          {form.items.map((item, i) => (
-            <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
-              <input 
-                style={{ ...inputBase, flex: 3 }} 
-                placeholder="品目" 
-                value={item.name} 
-                onChange={e => updateItem(i, "name", e.target.value)} 
-              />
-              <input 
-                style={{ ...inputBase, flex: 1.5 }} 
-                type="number" 
-                placeholder="単価" 
-                value={item.price || ""} 
-                onChange={e => updateItem(i, "price", e.target.value)} 
-              />
-              <select 
-                style={{ ...inputBase, flex: 1.2 }} 
-                value={item.taxRate} 
-                onChange={e => updateItem(i, "taxRate", e.target.value)}
-              >
-                <option value={10}>10%</option>
-                <option value={8}>8%</option>
-                <option value={0}>非課税</option>
-              </select>
-              {form.items.length > 1 && (
-                <button 
-                  onClick={() => removeItem(i)} 
-                  style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", padding: "0 4px" }}
-                >
-                  削除
-                </button>
-              )}
-            </div>
-          ))}
-          <button 
-            onClick={addItem} 
-            style={{ background: "none", border: "none", color: "#34D399", fontSize: 12, cursor: "pointer", marginTop: 4 }}
-          >
-            + 行を追加
-          </button>
-        </div>
-
-        {/* 3. 領収書アップロード欄 */}
-        <div style={{ border: "1px dashed #334155", padding: 12, borderRadius: 8, background: "#0F172A" }}>
-          <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
-            領収書の添付（必須）
-          </label>
-          <input 
-            type="file" 
-            accept="image/*,.pdf" 
-            onChange={e => setFile(e.target.files[0])}
-            style={{ fontSize: 12, color: "#E2E8F0", width: "100%" }}
-          />
-          {file && (
-            <div style={{ fontSize: 11, color: "#34D399", marginTop: 6 }}>
-              選択済み: {file.name}
-            </div>
-          )}
-        </div>
-
-        {/* 4. 合計表示と保存ボタン */}
-        <div style={{ textAlign: "right", borderTop: "1px solid #334155", paddingTop: 16, marginTop: 8 }}>
-          <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 4 }}>合計金額 (税込)</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: "#F1F5F9", fontFamily: "monospace", marginBottom: 16 }}>
-            {fmtYen(calc.total)}
-          </div>
-          <Btn onClick={saveInvoice} disabled={issaving} style={{ width: "100%" }}>
-            {issaving ? "保存中..." : "申請を保存する"}
-          </Btn>
-        </div>
-
-      </div>
-    </Card>
-  )}
-    {/* 一覧表示 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {invoices.length === 0 && !loading && <Card style={{textAlign: "center", color: "#64748B"}}>申請データはありません</Card>}
-        {invoices.map(inv => (
-          <Card key={inv.id} style={{ padding: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      {showForm && (
+        <Card style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* 基本情報 */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div>
-                <div style={{ fontWeight: 700 }}>{inv.companyName} <StatusBadge status={inv.status} /></div>
-                <div style={{ fontSize: 13, color: "#34D399" }}>{inv.client}</div>
-                {/* 領収書リンクを表示 */}
-                {inv.receiptUrl && (
-                  <a href={inv.receiptUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#60A5FA", textDecoration: "none", display: "block", marginTop: 4 }}>
-                    添付ファイルを表示 ↗
-                  </a>
-                )}
+                <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>買い出し先</label>
+                <input style={inputBase} placeholder="店舗名" value={form.client} onChange={e => setForm({...form, client: e.target.value})} />
               </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "monospace" }}>{fmtYen(inv.total)}</div>
-                {isAdmin && (
-                  <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    {inv.status === "draft" && <Btn variant="accent" onClick={() => updateStatus(inv, "sent")} style={{ fontSize: 11 }}>承認</Btn>}
-                    {inv.status === "sent" && (
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <select style={{ ...inputBase, fontSize: 11, padding: "2px 4px" }} value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)}>
-                          {accountList.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-                        </select>
-                        <Btn onClick={() => updateStatus(inv, "paid")} style={{ fontSize: 11 }}>完了</Btn>
-                      </div>
-                    )}
-                    <button onClick={() => deleteInv(inv)} style={{ color: "#EF4444", background: "none", border: "none", fontSize: 11, cursor: "pointer" }}>削除</button>
-                  </div>
-                )}
+              <div>
+                <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>BLK会議の日程</label>
+                <input type="date" style={{ ...inputBase, colorScheme: "dark", filter: "invert(1) brightness(100%)", cursor: "pointer" }} value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})} onClick={(e) => e.target.showPicker && e.target.showPicker()} />
               </div>
             </div>
-          </Card>
-        ))}
+
+            {/* 明細部分 (addItemなどを使わず直接記述) */}
+            <div>
+              <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>購入明細</label>
+              {form.items.map((item, i) => (
+                <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                  <input style={{ ...inputBase, flex: 3 }} placeholder="品目" value={item.name} onChange={e => {
+                    const newItems = [...form.items]; newItems[i].name = e.target.value; setForm({...form, items: newItems});
+                  }} />
+                  <input style={{ ...inputBase, flex: 1.5 }} type="number" placeholder="単価" value={item.price || ""} onChange={e => {
+                    const newItems = [...form.items]; newItems[i].price = Number(e.target.value); setForm({...form, items: newItems});
+                  }} />
+                  <select style={{ ...inputBase, flex: 1.2 }} value={item.taxRate} onChange={e => {
+                    const newItems = [...form.items]; newItems[i].taxRate = Number(e.target.value); setForm({...form, items: newItems});
+                  }}>
+                    <option value={10}>10%</option><option value={8}>8%</option><option value={0}>非課税</option>
+                  </select>
+                  {form.items.length > 1 && (
+                    <button style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 11 }} onClick={() => {
+                      setForm({...form, items: form.items.filter((_, idx) => idx !== i)});
+                    }}>削除</button>
+                  )}
+                </div>
+              ))}
+              <button style={{ background: "none", border: "none", color: "#34D399", fontSize: 12, cursor: "pointer", marginTop: 4, fontWeight: "bold" }} onClick={() => {
+                setForm({...form, items: [...form.items, { name: "", qty: 1, price: 0, taxRate: 10 }]});
+              }}>+ 行を追加</button>
+            </div>
+
+            {/* 領収書アップロード */}
+            <div style={{ border: "1px dashed #334155", padding: 12, borderRadius: 8, background: "#0F172A" }}>
+              <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>領収書の添付（必須）</label>
+              <input type="file" accept="image/*,.pdf" onChange={e => setFile(e.target.files[0])} style={{ fontSize: 12, color: "#E2E8F0", width: "100%" }} />
+              {file && <div style={{ fontSize: 11, color: "#34D399", marginTop: 6 }}>選択済み: {file.name}</div>}
+            </div>
+
+            <div style={{ textAlign: "right", borderTop: "1px solid #334155", paddingTop: 16 }}>
+              <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 4 }}>合計金額 (税込)</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#F1F5F9", fontFamily: "monospace", marginBottom: 16 }}>{fmtYen(calc.total)}</div>
+              <Btn onClick={saveInvoice} disabled={issaving} style={{ width: "100%" }}>{issaving ? "保存中..." : "申請を保存する"}</Btn>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* 一覧表示 */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {loading ? <p style={{textAlign:"center", color:"#64748B"}}>読み込み中...</p> : invoices.length === 0 ? <Card style={{padding:40, textAlign:"center", color:"#64748B"}}>申請データはありません</Card> : 
+          invoices.map(inv => (
+            <Card key={inv.id} style={{ padding: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 700, color: "#F1F5F9" }}>{inv.companyName} <StatusBadge status={inv.status} /></div>
+                  <div style={{ fontSize: 13, color: "#34D399" }}>{inv.client}</div>
+                  {inv.receiptUrl && <a href={inv.receiptUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#60A5FA", textDecoration: "none", display: "block", marginTop: 4 }}>領収書を表示 ↗</a>}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "monospace", color: "#F1F5F9" }}>{fmtYen(inv.total)}</div>
+                  {isAdmin && (
+                    <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      {inv.status === "draft" && <Btn variant="accent" onClick={async () => {
+                        await updateDoc(doc(db, "invoices", inv.id), { status: "sent" }); load();
+                      }} style={{ fontSize: 11 }}>承認</Btn>}
+                      {inv.status === "sent" && (
+                        <div style={{ display: "flex", gap: 4, background: "#0F172A", padding: 2, borderRadius: 6, border: "1px solid #334155" }}>
+                          <select style={{ ...inputBase, border: "none", fontSize: 11, width: "auto" }} value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)}>
+                            {accountList.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                          </select>
+                          <Btn onClick={async () => {
+                            const entryId = uid();
+                            await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", account: selectedAccount, amount: inv.total, tax: inv.tax, note: `自動: ${inv.client}`, companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(), fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl });
+                            await updateDoc(doc(db, "invoices", inv.id), { status: "paid", linkedEntryId: entryId }); load();
+                          }} style={{ fontSize: 11 }}>完了</Btn>
+                        </div>
+                      )}
+                      <button style={{ background: "#1E293B", border: "1px solid #334155", color: "#EF4444", padding: "4px 8px", borderRadius: 4, fontSize: 11, cursor: "pointer" }} onClick={async () => {
+                        if (!window.confirm("削除しますか？")) return;
+                        if (inv.receiptDriveId) await gasDelete(inv.receiptDriveId);
+                        if (inv.linkedEntryId) await deleteDoc(doc(db, "entries", inv.linkedEntryId));
+                        await deleteDoc(doc(db, "invoices", inv.id)); load();
+                      }}>削除</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          ))
+        }
       </div>
     </div>
   );
