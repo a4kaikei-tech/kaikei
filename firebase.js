@@ -15,13 +15,12 @@ const firebaseConfig = {
   appId: "1:294563699065:web:b268ceb02cdec94c55b7a8",
   measurementId: "G-Y7LNS4X9YH"
 };
-
 // ============================================================
 // ★ GAS Web App の URL を貼り付けてください ★
 // GAS でデプロイした時に表示される URL です
 // 例: https://script.google.com/macros/s/XXXXX.../exec
 // ============================================================
-export const GAS_API_URL = "https://script.google.com/macros/s/AKfycby9iebFS-JxOdZ5mw9zRslmPNfsCqm8fk8Qb8LSSY2QUO5ylFDktrDsOX24WDKybA7a/exec";
+export const GAS_API_URL = "https://script.google.com/macros/s/1I6gZIOU_gpvYQ0nhuy6tvptx18v3oMiY/exec";
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
