@@ -170,7 +170,7 @@ function AuthPage({ page, setPage, showToast }) {
                 <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>名前</label>
                 <input
                   style={inputBase}
-                  placeholder="株式会社サンプル"
+                  placeholder="熊野A4太郎"
                   value={companyName}
                   onChange={e => setCompanyName(e.target.value)}
                 />
