@@ -421,7 +421,7 @@ function Reports({ user }) {
 
 /* ══════════════════ SETTINGS ══════════════════ */
 function SettingsPage({ user, showToast }) {
-    const [newName, setNewName] = useState(user.displayName || "");
+  const [newName, setNewName] = useState(user.companyName || "");
   const [updating, setUpdating] = useState(false);
   
 // ユーザー名の更新処理
@@ -430,11 +430,11 @@ function SettingsPage({ user, showToast }) {
     setUpdating(true);
     try {
       // 1. Firebase Authのプロフィールを更新
-      await updateProfile(user, { displayName: newName });
+      await updateProfile(user, { companyName: newName });
       
       // 2. Firestore側のデータも同期
       await updateDoc(doc(db, "users", user.uid), { 
-        displayName: newName 
+        companyName: newName 
       });
 
       // 3. ★重要：Auth情報をリロードして画面表示を更新
