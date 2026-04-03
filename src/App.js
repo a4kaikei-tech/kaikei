@@ -207,7 +207,7 @@ function Ledger({ user, showToast }) {
   const del = async (id) => { if (!isAdmin) return showToast("管理者のみ削除できます", "error"); await deleteDoc(doc(db, "entries", id)); showToast("削除しました"); load(); };
   return (<div><PageTitle right={<input type="month" style={{ ...inputBase, width: "auto", colorScheme: "dark" }} value={filterMonth} onChange={e => setFilterMonth(e.target.value)} />}>帳簿</PageTitle>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 20 }}><Card style={{ padding: 16 }}><div style={{ fontSize: 11, color: "#94A3B8" }}>収入合計</div><div style={{ fontSize: 20, fontWeight: 700, color: "#10B981", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tInc)}</div></Card><Card style={{ padding: 16 }}><div style={{ fontSize: 11, color: "#94A3B8" }}>支出合計</div><div style={{ fontSize: 20, fontWeight: 700, color: "#F59E0B", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tExp)}</div></Card><Card style={{ padding: 16 }}><div style={{ fontSize: 11, color: "#94A3B8" }}>差引</div><div style={{ fontSize: 20, fontWeight: 700, color: tInc - tExp >= 0 ? "#3B82F6" : "#EF4444", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tInc - tExp)}</div></Card></div>
-    {loading ? <p style={{ color: "#64748B" }}>読み込み中...</p> : filtered.length === 0 ? <Card><p style={{ color: "#475569", textAlign: "center", padding: 20 }}>この月の帳簿はありません</p></Card> : <Card style={{ padding: 0, overflow: "hidden" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}><thead><tr style={{ background: "#0F172A" }}>{["日付","区分","勘定科目","摘要","金額",...(isAdmin ? [""] : [])].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: "#64748B", fontWeight: 500, fontSize: 12 }}>{h}</th>)}</tr></thead><tbody>{filtered.map(e => <tr key={e.id} style={{ borderTop: "1px solid #334155" }}><td style={{ padding: "10px 14px", color: "#94A3B8", fontFamily: "'Space Mono',monospace", fontSize: 12 }}>{e.date}</td><td style={{ padding: "10px 14px" }}><span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: e.type === "income" ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)", color: e.type === "income" ? "#10B981" : "#F59E0B" }}>{e.type === "income" ? "収入" : "支出"}</span></td><td style={{ padding: "10px 14px", color: "#E2E8F0" }}>{e.accountName}</td><td style={{ padding: "10px 14px", color: "#94A3B8" }}>{e.description || "—"}</td><td style={{ padding: "10px 14px", fontWeight: 600, fontFamily: "'Space Mono',monospace", color: e.type === "income" ? "#10B981" : "#F59E0B" }}>{fmtYen(e.amount)}</td>{isAdmin && <td style={{ padding: "10px 14px" }}><button onClick={() => del(e.id)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14 }}>✕</button></td>}</tr>)}</tbody></table></Card>}
+    {loading ? <p style={{ color: "#64748B" }}>読み込み中...</p> : filtered.length === 0 ? <Card><p style={{ color: "#475569", textAlign: "center", padding: 20 }}>この月の帳簿はありません</p></Card> : <Card style={{ padding: 0, overflow: "hidden" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}><thead><tr style={{ background: "#0F172A" }}>{["日付","区分","勘定科目","摘要","金額",...(isAdmin ? [""] : [])].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: "#64748B", fontWeight: 500, fontSize: 12 }}>{h}</th>)}</tr></thead><tbody>{filtered.map(e => <tr key={e.id} style={{ borderTop: "1px solid #334155" }}><td style={{ padding: "10px 14px", color: "#94A3B8", fontFamily: "'Space Mono',monospace", fontSize: 12 }}>{e.date}</td><td style={{ padding: "10px 14px" }}><span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: e.type === "income" ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)", color: e.type === "income" ? "#10B981" : "#F59E0B" }}>{e.type === "income" ? "収入" : "支出"}</span></td><td style={{ padding: "10px 14px", color: "#E2E8F0" }}>{e.accountName || e.account || "—"}</td><td style={{ padding: "10px 14px", color: "#94A3B8" }}>{e.description || e.note || "—"}</td><td style={{ padding: "10px 14px", fontWeight: 600, fontFamily: "'Space Mono',monospace", color: e.type === "income" ? "#10B981" : "#F59E0B" }}>{fmtYen(e.amount)}</td>{isAdmin && <td style={{ padding: "10px 14px" }}><button onClick={() => del(e.id)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14 }}>✕</button></td>}</tr>)}</tbody></table></Card>}
   </div>);
 }
 
@@ -348,13 +348,6 @@ const saveInvoice = async () => {
               </div>
             </div>
 
-            {/* ファイルアップロード部分 */}
-            <div>
-              <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>領収書・レシート</label>
-              <input type="file" accept="image/*,application/pdf" onChange={e => setFile(e.target.files[0])} style={{ fontSize: 12, color: "#E2E8F0" }} />
-              {form.receiptUrl && !file && <p style={{ fontSize: 11, color: "#34D399", marginTop: 4 }}>※ 登録済みのファイルがあります</p>}
-            </div>
-
             <div>
               <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>購入明細</label>
               {form.items.map((item, i) => (
@@ -382,6 +375,13 @@ const saveInvoice = async () => {
               }}>+ 行を追加</button>
             </div>
 
+            {/* ファイルアップロード（明細の後） */}
+            <div>
+              <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>領収書・レシート</label>
+              <input type="file" accept="image/*,application/pdf" onChange={e => setFile(e.target.files[0])} style={{ fontSize: 12, color: "#E2E8F0" }} />
+              {form.receiptUrl && !file && <p style={{ fontSize: 11, color: "#34D399", marginTop: 4 }}>※ 登録済みのファイルがあります</p>}
+            </div>
+
             <div style={{ textAlign: "right", borderTop: "1px solid #334155", paddingTop: 16 }}>
               <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 4 }}>合計金額 (税込)</div>
               <div style={{ fontSize: 24, fontWeight: 800, color: "#F1F5F9", fontFamily: "monospace", marginBottom: 16 }}>{fmtYen(calc.total)}</div>
@@ -391,14 +391,17 @@ const saveInvoice = async () => {
         </Card>
       )}
 
-      {/* 一覧表示部分は以前のロジックを継続 */}
+      {/* 一覧表示部分 */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {loading ? <p style={{textAlign:"center", color:"#64748B"}}>読み込み中...</p> : invoices.map(inv => (
+        {loading ? <p style={{textAlign:"center", color:"#64748B"}}>読み込み中...</p> : invoices.length === 0 ? (
+          <Card><p style={{ color: "#475569", textAlign: "center", padding: 24, fontSize: 14 }}>申請書はありません</p></Card>
+        ) : invoices.map(inv => (
           <Card key={inv.id} style={{ padding: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
               <div>
                 <div style={{ fontWeight: 700, color: "#F1F5F9" }}>{inv.companyName} <StatusBadge status={inv.status} /></div>
                 <div style={{ fontSize: 13, color: "#34D399" }}>{inv.client}</div>
+                {inv.account && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>科目: {inv.account}</div>}
                 {inv.receiptUrl && <a href={inv.receiptUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#60A5FA", textDecoration: "none", display: "block", marginTop: 4 }}>領収書を表示 ↗</a>}
               </div>
               <div style={{ textAlign: "right" }}>
@@ -420,7 +423,7 @@ const saveInvoice = async () => {
                       const acct = inv._selAccount || selectedAccount;
                       if (!acct) return showToast("科目を選択してください", "error");
                       const entryId = uid();
-                      await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", account: acct, amount: inv.total, tax: inv.tax, note: `自動: ${inv.client}`, companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(), fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl || "" });
+                      await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", accountName: acct, amount: inv.total, tax: inv.tax, description: `自動: ${inv.client}`, companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(), fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl || "" });
                       await updateDoc(doc(db, "invoices", inv.id), { status: "paid", linkedEntryId: entryId, account: acct });
                       showToast("完了しました — 仕訳を自動登録しました");
                       load();
@@ -458,7 +461,7 @@ const saveInvoice = async () => {
 function Reports({ user }) {
   const [entries, setEntries] = useState([]); const [loading, setLoading] = useState(true); const [year, setYear] = useState(new Date().getFullYear());
   useEffect(() => { (async () => { const s = await getDocs(collection(db, "entries")); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); setEntries(a); setLoading(false); })(); }, []);
-  const ye = entries.filter(e => e.date && e.date.startsWith(String(year))); const expByAcc = {}; ye.forEach(e => { if (e.type === "expense") expByAcc[e.accountName] = (expByAcc[e.accountName] || 0) + (e.amount || 0); }); const tInc = ye.filter(e => e.type === "income").reduce((s, e) => s + (e.amount || 0), 0); const tExp = Object.values(expByAcc).reduce((s, v) => s + v, 0);
+  const ye = entries.filter(e => e.date && e.date.startsWith(String(year))); const expByAcc = {}; ye.forEach(e => { if (e.type === "expense") { const aName = e.accountName || e.account || "未分類"; expByAcc[aName] = (expByAcc[aName] || 0) + (e.amount || 0); } }); const tInc = ye.filter(e => e.type === "income").reduce((s, e) => s + (e.amount || 0), 0); const tExp = Object.values(expByAcc).reduce((s, v) => s + v, 0);
   const monthlyPL = useMemo(() => { const d = []; for (let m = 1; m <= 12; m++) { const mk2 = `${year}-${m.toString().padStart(2,"0")}`; const me = ye.filter(e => e.date && e.date.startsWith(mk2)); const i2 = me.filter(e => e.type === "income").reduce((s, e) => s + (e.amount || 0), 0); const e2 = me.filter(e => e.type === "expense").reduce((s, e) => s + (e.amount || 0), 0); d.push({ month: m, income: i2, expense: e2, profit: i2 - e2 }); } return d; }, [ye, year]);
   if (loading) return <p style={{ color: "#64748B" }}>読み込み中...</p>;
   const maxExp = Math.max(...Object.values(expByAcc), 1);
