@@ -416,7 +416,7 @@ function MainLayout({ profile, user, page, setPage, logout, showToast, setProfil
       ];
 
   useEffect(() => {
-    if (!isAdmin && (page === "journal" || page === "accounts") {
+    if (!isAdmin && (page === "journal" || page === "accounts")) {
       setPage("dashboard");
     }
   }, [isAdmin, page, setPage]);
