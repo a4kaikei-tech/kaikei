@@ -113,7 +113,6 @@ function MainLayout({ profile, user, page, setPage, logout, showToast }) {
     { id: "journal", icon: "📒", label: "仕訳入力" },
     { id: "ledger", icon: "📖", label: "仕訳帳" },
     { id: "invoices", icon: "📄", label: "請求書" },
-    { id: "reports", icon: "📈", label: "レポート" },
     { id: "receipts", icon: "🧾", label: "領収書" },
     { id: "accounts", icon: "🏷️", label: "勘定科目" },
   ];
@@ -135,7 +134,6 @@ function MainLayout({ profile, user, page, setPage, logout, showToast }) {
           {page === "journal" && <JournalEntry user={user} showToast={showToast} setPage={setPage} />}
           {page === "ledger" && <Ledger user={user} showToast={showToast} />}
           {page === "invoices" && <InvoicesPage user={user} profile={profile} showToast={showToast} />}
-          {page === "reports" && <Reports user={user} />}
           {page === "receipts" && <Receipts user={user} showToast={showToast} />}
           {page === "accounts" && <AccountsPage user={user} showToast={showToast} />}
         </div>
@@ -342,59 +340,131 @@ function InvoicesPage({ user, profile, showToast }) {
   };
 
   return (
-    <div>
-      <PageTitle right={isAdmin && <Btn onClick={() => setShowForm(!showForm)}>{showForm ? "閉じる" : "新規申請"}</Btn>}>
-        請求書・立替申請
-      </PageTitle>
+/* ══════════════════ INVOICES FORM SECTION ══════════════════ */
+<div>
+  <PageTitle right={isAdmin && <Btn onClick={() => setShowForm(!showForm)}>{showForm ? "閉じる" : "新規申請"}</Btn>}>
+    請求書・立替申請
+  </PageTitle>
 
-      {showForm && (
-        <Card style={{ marginBottom: 24 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <input style={inputBase} placeholder="店舗名" value={form.client} onChange={e => setForm({...form, client: e.target.value})} />
-              <input type="date" style={inputBase} value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})} />
-            </div>
-
-            {/* --- 領収書アップロード欄 --- */}
-            <div style={{ border: "1px dashed #334155", padding: 12, borderRadius: 8, background: "#0F172A" }}>
-              <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>領収書の添付（必須）</label>
-              <input 
-                type="file" 
-                accept="image/*,.pdf" 
-                onChange={e => setFile(e.target.files[0])}
-                style={{ fontSize: 12, color: "#E2E8F0" }}
-              />
-              {file && <div style={{ fontSize: 11, color: "#34D399", marginTop: 4 }}>選択済み: {file.name}</div>}
-            </div>
-
-            {/* 明細部分 */}
-            <div>
-              {form.items.map((item, i) => (
-                <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                  <input style={{ ...inputBase, flex: 3 }} placeholder="品目" value={item.name} onChange={e => updateItem(i, "name", e.target.value)} />
-                  <input style={{ ...inputBase, flex: 1.5 }} type="number" placeholder="単価" value={item.price || ""} onChange={e => updateItem(i, "price", e.target.value)} />
-                  <select style={{ ...inputBase, flex: 1 }} value={item.taxRate} onChange={e => updateItem(i, "taxRate", e.target.value)}>
-                    <option value={10}>10%</option>
-                    <option value={8}>8%</option>
-                    <option value={0}>非課税</option>
-                  </select>
-                </div>
-              ))}
-              <button onClick={() => setForm({...form, items: [...form.items, { name: "", qty: 1, price: 0, taxRate: 10 }]})} style={{ background: "none", border: "none", color: "#34D399", fontSize: 12, cursor: "pointer" }}>+ 行を追加</button>
-            </div>
-
-            <div style={{ textAlign: "right", borderTop: "1px solid #334155", paddingTop: 12 }}>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#F1F5F9", fontFamily: "monospace" }}>{fmtYen(calc.total)}</div>
-            </div>
-            
-            <Btn onClick={saveInvoice} disabled={issaving}>
-              {issaving ? "アップロード中..." : "申請を保存"}
-            </Btn>
+  {showForm && (
+    <Card style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        
+        {/* 1. 基本情報入力（店舗名 & 日付） */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {/* 店舗名入力 */}
+          <div>
+            <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>
+              買い出し先
+            </label>
+            <input 
+              style={inputBase} 
+              placeholder="店舗名" 
+              value={form.client} 
+              onChange={e => setForm({...form, client: e.target.value})} 
+            />
           </div>
-        </Card>
-      )}
 
-      {/* 一覧表示 */}
+          {/* 日付入力（カレンダーアイコンを白く修正） */}
+          <div>
+            <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>
+              BLK会議の日程
+            </label>
+            <input 
+              type="date" 
+              style={{ 
+                ...inputBase, 
+                colorScheme: "dark", 
+                filter: "invert(1) brightness(100%)", 
+                cursor: "pointer"
+              }} 
+              value={form.dueDate} 
+              onChange={e => setForm({...form, dueDate: e.target.value})} 
+              onClick={(e) => e.target.showPicker && e.target.showPicker()} 
+            />
+          </div>
+        </div>
+
+        {/* 2. 明細部分 */}
+        <div>
+          <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>
+            購入明細
+          </label>
+          {form.items.map((item, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+              <input 
+                style={{ ...inputBase, flex: 3 }} 
+                placeholder="品目" 
+                value={item.name} 
+                onChange={e => updateItem(i, "name", e.target.value)} 
+              />
+              <input 
+                style={{ ...inputBase, flex: 1.5 }} 
+                type="number" 
+                placeholder="単価" 
+                value={item.price || ""} 
+                onChange={e => updateItem(i, "price", e.target.value)} 
+              />
+              <select 
+                style={{ ...inputBase, flex: 1.2 }} 
+                value={item.taxRate} 
+                onChange={e => updateItem(i, "taxRate", e.target.value)}
+              >
+                <option value={10}>10%</option>
+                <option value={8}>8%</option>
+                <option value={0}>非課税</option>
+              </select>
+              {form.items.length > 1 && (
+                <button 
+                  onClick={() => removeItem(i)} 
+                  style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", padding: "0 4px" }}
+                >
+                  削除
+                </button>
+              )}
+            </div>
+          ))}
+          <button 
+            onClick={addItem} 
+            style={{ background: "none", border: "none", color: "#34D399", fontSize: 12, cursor: "pointer", marginTop: 4 }}
+          >
+            + 行を追加
+          </button>
+        </div>
+
+        {/* 3. 領収書アップロード欄 */}
+        <div style={{ border: "1px dashed #334155", padding: 12, borderRadius: 8, background: "#0F172A" }}>
+          <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
+            領収書の添付（必須）
+          </label>
+          <input 
+            type="file" 
+            accept="image/*,.pdf" 
+            onChange={e => setFile(e.target.files[0])}
+            style={{ fontSize: 12, color: "#E2E8F0", width: "100%" }}
+          />
+          {file && (
+            <div style={{ fontSize: 11, color: "#34D399", marginTop: 6 }}>
+              選択済み: {file.name}
+            </div>
+          )}
+        </div>
+
+        {/* 4. 合計表示と保存ボタン */}
+        <div style={{ textAlign: "right", borderTop: "1px solid #334155", paddingTop: 16, marginTop: 8 }}>
+          <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 4 }}>合計金額 (税込)</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#F1F5F9", fontFamily: "monospace", marginBottom: 16 }}>
+            {fmtYen(calc.total)}
+          </div>
+          <Btn onClick={saveInvoice} disabled={issaving} style={{ width: "100%" }}>
+            {issaving ? "保存中..." : "申請を保存する"}
+          </Btn>
+        </div>
+
+      </div>
+    </Card>
+  )}
+    {/* 一覧表示 */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {invoices.length === 0 && !loading && <Card style={{textAlign: "center", color: "#64748B"}}>申請データはありません</Card>}
         {invoices.map(inv => (
@@ -447,21 +517,6 @@ function Reports({ user }) {
     <Card style={{ marginBottom: 20 }}><h3 style={{ fontSize: 15, fontWeight: 600, color: "#F1F5F9", marginBottom: 16 }}>損益計算書（簡易）</h3><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>{[["総収入", tInc, "#10B981"],["総支出", tExp, "#F59E0B"],["純利益", tInc - tExp, tInc - tExp >= 0 ? "#3B82F6" : "#EF4444"]].map(([l, v, c]) => <div key={l} style={{ padding: 16, background: "#0F172A", borderRadius: 8, textAlign: "center" }}><div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 4 }}>{l}</div><div style={{ fontSize: 24, fontWeight: 700, color: c, fontFamily: "'Space Mono',monospace" }}>{fmtYen(v)}</div></div>)}</div></Card>
     <Card style={{ marginBottom: 20 }}><h3 style={{ fontSize: 15, fontWeight: 600, color: "#F1F5F9", marginBottom: 16 }}>経費内訳</h3>{Object.keys(expByAcc).length === 0 ? <p style={{ color: "#475569", fontSize: 13 }}>データがありません</p> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{Object.entries(expByAcc).sort((a, b) => b[1] - a[1]).map(([name, amt]) => <div key={name} style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 13, color: "#94A3B8", minWidth: 100 }}>{name}</span><div style={{ flex: 1, background: "#0F172A", borderRadius: 4, height: 24, overflow: "hidden" }}><div style={{ width: `${(amt / maxExp) * 100}%`, height: "100%", background: "linear-gradient(90deg,#F59E0B,#D97706)", borderRadius: 4 }} /></div><span style={{ fontSize: 13, fontWeight: 600, color: "#E2E8F0", fontFamily: "'Space Mono',monospace", minWidth: 90, textAlign: "right" }}>{fmtYen(amt)}</span></div>)}</div>}</Card>
     <Card style={{ padding: 0, overflow: "hidden" }}><h3 style={{ fontSize: 15, fontWeight: 600, color: "#F1F5F9", padding: "16px 20px 0" }}>月別推移</h3><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 12 }}><thead><tr style={{ background: "#0F172A" }}>{["月","収入","支出","利益"].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "right", color: "#64748B", fontWeight: 500, fontSize: 12 }}>{h}</th>)}</tr></thead><tbody>{monthlyPL.map(m => <tr key={m.month} style={{ borderTop: "1px solid #334155" }}><td style={{ padding: "8px 14px", textAlign: "right", color: "#94A3B8" }}>{m.month}月</td><td style={{ padding: "8px 14px", textAlign: "right", color: "#10B981", fontFamily: "'Space Mono',monospace" }}>{fmtYen(m.income)}</td><td style={{ padding: "8px 14px", textAlign: "right", color: "#F59E0B", fontFamily: "'Space Mono',monospace" }}>{fmtYen(m.expense)}</td><td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 600, fontFamily: "'Space Mono',monospace", color: m.profit >= 0 ? "#3B82F6" : "#EF4444" }}>{fmtYen(m.profit)}</td></tr>)}</tbody><tfoot><tr style={{ borderTop: "2px solid #475569", background: "#0F172A" }}><td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 600, color: "#F1F5F9" }}>合計</td><td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: "#10B981", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tInc)}</td><td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: "#F59E0B", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tExp)}</td><td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, fontFamily: "'Space Mono',monospace", color: tInc - tExp >= 0 ? "#3B82F6" : "#EF4444" }}>{fmtYen(tInc - tExp)}</td></tr></tfoot></table></Card>
-  </div>);
-}
-
-/* ══════════════════ RECEIPTS ══════════════════ */
-function Receipts({ user, showToast }) {
-  const { isAdmin } = useRole();
-  const [receipts, setReceipts] = useState([]); const [uploading, setUploading] = useState(false); const [loading, setLoading] = useState(true); const [memo, setMemo] = useState("");
-  const load = useCallback(async () => { setLoading(true); const s = await getDocs(collection(db, "receipts")); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); setReceipts(a.sort((a, b) => (b.uploadedAt?.seconds || 0) - (a.uploadedAt?.seconds || 0))); setLoading(false); }, []);
-  useEffect(() => { load(); }, [load]);
-  const handleUpload = async (e) => { if (!isAdmin) return; const file = e.target.files[0]; if (!file) return; if (file.size > 10 * 1024 * 1024) return showToast("10MB以下にしてください", "error"); setUploading(true); try { const result = await gasUpload(file); await setDoc(doc(db, "receipts", uid()), { name: file.name, size: result.size || file.size, type: file.type, url: result.fileUrl, thumbnailUrl: result.thumbnailUrl || result.fileUrl, driveFileId: result.fileId, memo, createdBy: user.uid, uploadedAt: serverTimestamp() }); showToast("領収書を保存しました！"); setMemo(""); load(); } catch (err) { showToast("アップロード失敗: " + err.message, "error"); } setUploading(false); e.target.value = ""; };
-  const del = async (r) => { if (!isAdmin) return showToast("管理者のみ削除できます", "error"); if (r.driveFileId) { try { await gasDelete(r.driveFileId); } catch {} } await deleteDoc(doc(db, "receipts", r.id)); showToast("削除しました"); load(); };
-  const fmtSize = (b) => b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(1) + " KB" : (b / 1048576).toFixed(1) + " MB";
-  return (<div><PageTitle sub="全メンバー共有の領収書データ">領収書</PageTitle>
-    {isAdmin && <Card style={{ marginBottom: 20 }}><div style={{ display: "flex", flexDirection: "column", gap: 12 }}><div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>メモ（任意）</label><input style={inputBase} placeholder="例: タクシー代、文具購入..." value={memo} onChange={e => setMemo(e.target.value)} /></div><div style={{ display: "flex", alignItems: "center", gap: 16 }}><label style={{ padding: "10px 20px", borderRadius: 8, cursor: uploading ? "default" : "pointer", background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff", fontSize: 13, fontWeight: 600, opacity: uploading ? .6 : 1 }}>{uploading ? "アップロード中..." : "🧾 ファイルを選択"}<input type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={handleUpload} disabled={uploading} /></label><span style={{ fontSize: 12, color: "#64748B" }}>画像・PDF（最大10MB）</span></div></div></Card>}
-    {loading ? <p style={{ color: "#64748B" }}>読み込み中...</p> : receipts.length === 0 ? <Card><p style={{ color: "#475569", textAlign: "center", padding: 20 }}>領収書がありません</p></Card> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>{receipts.map(r => <Card key={r.id} style={{ padding: 0, overflow: "hidden" }}>{r.type?.startsWith("image/") ? <a href={r.url} target="_blank" rel="noreferrer"><div style={{ height: 140, background: `url(${r.thumbnailUrl || r.url}) center/cover`, borderBottom: "1px solid #334155" }} /></a> : <a href={r.url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 140, background: "#0F172A", borderBottom: "1px solid #334155", color: "#64748B", textDecoration: "none", fontSize: 32 }}>📄</a>}<div style={{ padding: 14 }}><div style={{ fontSize: 13, fontWeight: 500, color: "#E2E8F0", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.memo || r.name}</div><div style={{ fontSize: 11, color: "#64748B" }}>{fmtDate(r.uploadedAt)} · {fmtSize(r.size)}</div>{isAdmin && <button onClick={() => del(r)} style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 11, marginTop: 6 }}>削除</button>}</div></Card>)}</div>}
   </div>);
 }
 
