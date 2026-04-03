@@ -1,16 +1,46 @@
 import React, { useState, useEffect, useCallback, useMemo, createContext, useContext } from "react";
 import { auth, db, GAS_API_URL } from "./firebase";
 import {
-  createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signOut, onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  updateProfile,
 } from "firebase/auth";
 import {
-  doc, setDoc, getDoc, getDocs, deleteDoc, updateDoc,
-  collection, query, where, serverTimestamp, Timestamp,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  deleteDoc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  serverTimestamp,
+  Timestamp,
 } from "firebase/firestore";
-import { updateProfile, sendPasswordResetEmail } from "firebase/auth";
 
 /* ── helpers ── */
+function useResponsive() {
+  const getWidth = () => (typeof window !== "undefined" ? window.innerWidth : 1200);
+  const [width, setWidth] = useState(getWidth());
+
+  useEffect(() => {
+    const onResize = () => setWidth(getWidth());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1024,
+    isDesktop: width >= 1024,
+  };
+}
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const toDate = (d) => (d instanceof Timestamp ? d.toDate() : new Date(d));
 const fmtDate = (d) => { if (!d) return ""; const dt = toDate(d); return `${dt.getFullYear()}/${(dt.getMonth()+1).toString().padStart(2,"0")}/${dt.getDate().toString().padStart(2,"0")}`; };
@@ -42,8 +72,60 @@ const ReadOnlyBanner = () => (
 
 /* ── UI ── */
 const Card = ({ children, style = {}, onClick }) => (<div onClick={onClick} style={{ background: "#1E293B", borderRadius: 12, padding: 24, border: "1px solid #334155", ...style }}>{children}</div>);
-const PageTitle = ({ children, sub, right }) => (<div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, flexWrap: "wrap", gap: 12 }}><div><h1 style={{ fontSize: 22, fontWeight: 700, color: "#F1F5F9" }}>{children}</h1>{sub && <p style={{ color: "#64748B", fontSize: 13, marginTop: 4 }}>{sub}</p>}</div>{right}</div>);
-const Btn = ({ children, onClick, variant = "primary", disabled, style = {} }) => { const v = { primary: { background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff" }, secondary: { background: "#334155", color: "#E2E8F0" }, danger: { background: "#DC2626", color: "#fff" }, ghost: { background: "transparent", color: "#94A3B8", border: "1px solid #334155" }, accent: { background: "linear-gradient(135deg,#3B82F6,#6366F1)", color: "#fff" } }; return <button onClick={onClick} disabled={disabled} style={{ padding: "8px 18px", borderRadius: 8, border: "none", cursor: disabled ? "default" : "pointer", fontSize: 13, fontWeight: 600, opacity: disabled ? 0.5 : 1, ...v[variant], ...style }}>{children}</button>; };
+const PageTitle = ({ children, sub, right }) => {
+  const { isMobile } = useResponsive();
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: isMobile ? "stretch" : "flex-start",
+        flexDirection: isMobile ? "column" : "row",
+        marginBottom: 28,
+        gap: 12,
+      }}
+    >
+      <div>
+        <h1 style={{ fontSize: isMobile ? 20 : 22, fontWeight: 700, color: "#F1F5F9" }}>
+          {children}
+        </h1>
+        {sub && <p style={{ color: "#64748B", fontSize: 13, marginTop: 4 }}>{sub}</p>}
+      </div>
+      {right && <div style={{ width: isMobile ? "100%" : "auto" }}>{right}</div>}
+    </div>
+  );
+};
+const Btn = ({ children, onClick, variant = "primary", disabled, style = {} }) => {
+  const v = {
+    primary: { background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff" },
+    secondary: { background: "#334155", color: "#E2E8F0" },
+    danger: { background: "#DC2626", color: "#fff" },
+    ghost: { background: "transparent", color: "#94A3B8", border: "1px solid #334155" },
+    accent: { background: "linear-gradient(135deg,#3B82F6,#6366F1)", color: "#fff" },
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: "10px 18px",
+        minHeight: 40,
+        borderRadius: 8,
+        border: "none",
+        cursor: disabled ? "default" : "pointer",
+        fontSize: 13,
+        fontWeight: 600,
+        opacity: disabled ? 0.5 : 1,
+        ...v[variant],
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+};
 const inputBase = { width: "100%", padding: "10px 14px", background: "#0F172A", border: "1px solid #334155", borderRadius: 8, color: "#E2E8F0", fontSize: 14, outline: "none", fontFamily: "'Noto Sans JP',sans-serif" };
 
 /* ══════════════════ ROOT ══════════════════ */
@@ -78,8 +160,9 @@ export default function App() {
   );
 }
 
-/* ══════════════════ Auth ══════════════════ */
 function AuthPage({ page, setPage, showToast }) {
+  const { isMobile } = useResponsive();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -92,6 +175,7 @@ function AuthPage({ page, setPage, showToast }) {
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (e) {
+      console.error(e);
       showToast("ログインに失敗しました", "error");
     }
     setBusy(false);
@@ -100,26 +184,31 @@ function AuthPage({ page, setPage, showToast }) {
   const handleRegister = async () => {
     if (!email || !password || !companyName) return showToast("すべて入力してください", "error");
     if (password.length < 6) return showToast("パスワードは6文字以上", "error");
+
     setBusy(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
+
       await setDoc(doc(db, "users", cred.user.uid), {
         uid: cred.user.uid,
         email,
         companyName,
         role,
         createdAt: serverTimestamp(),
-        fiscalYearStart: 4
+        fiscalYearStart: 4,
       });
+
       if (role === "admin") {
         const snap = await getDoc(doc(db, "settings", "accounts"));
         if (!snap.exists()) {
           await setDoc(doc(db, "settings", "accounts"), { list: DEFAULT_ACCOUNTS });
         }
       }
+
       showToast("登録完了！");
       setPage("login");
     } catch (e) {
+      console.error(e);
       showToast("登録失敗: " + e.code, "error");
     }
     setBusy(false);
@@ -127,6 +216,7 @@ function AuthPage({ page, setPage, showToast }) {
 
   const handleForgotPassword = async () => {
     if (!email) return showToast("メールアドレスを入力してください", "error");
+
     setBusy(true);
     try {
       await sendPasswordResetEmail(auth, email);
@@ -140,29 +230,47 @@ function AuthPage({ page, setPage, showToast }) {
   };
 
   const title =
-    page === "login" ? "ログイン" :
-    page === "register" ? "新規登録" :
-    "パスワード再設定";
+    page === "login"
+      ? "ログイン"
+      : page === "register"
+      ? "新規登録"
+      : "パスワード再設定";
 
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 420, animation: "fadeIn .5s ease" }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{
-            width: 64, height: 64, borderRadius: 16, margin: "0 auto 16px",
-            background: "linear-gradient(135deg,#10B981,#059669)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 26, fontWeight: 700, color: "#fff",
-            boxShadow: "0 8px 32px rgba(16,185,129,.3)"
-          }}>¥</div>
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 16,
+              margin: "0 auto 16px",
+              background: "linear-gradient(135deg,#10B981,#059669)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 26,
+              fontWeight: 700,
+              color: "#fff",
+              boxShadow: "0 8px 32px rgba(16,185,129,.3)",
+            }}
+          >
+            ¥
+          </div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: "#F1F5F9" }}>A4-Kaikei</h1>
           <p style={{ color: "#64748B", fontSize: 14, marginTop: 4 }}>A4共益費管理システム</p>
         </div>
 
-        <div style={{ background: "#1E293B", borderRadius: 16, padding: 32, border: "1px solid #334155" }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 24, color: "#F1F5F9" }}>
-            {title}
-          </h2>
+        <div
+          style={{
+            background: "#1E293B",
+            borderRadius: 16,
+            padding: isMobile ? 20 : 32,
+            border: "1px solid #334155",
+          }}
+        >
+          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 24, color: "#F1F5F9" }}>{title}</h2>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {page === "register" && (
@@ -170,9 +278,9 @@ function AuthPage({ page, setPage, showToast }) {
                 <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>名前</label>
                 <input
                   style={inputBase}
-                  placeholder="熊野A4太郎"
+                  placeholder="株式会社サンプル"
                   value={companyName}
-                  onChange={e => setCompanyName(e.target.value)}
+                  onChange={(e) => setCompanyName(e.target.value)}
                 />
               </div>
             )}
@@ -184,7 +292,7 @@ function AuthPage({ page, setPage, showToast }) {
                 type="email"
                 placeholder="you@example.com"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
 
@@ -196,8 +304,8 @@ function AuthPage({ page, setPage, showToast }) {
                   type="password"
                   placeholder="••••••"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  onKeyDown={e => {
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       page === "login" ? handleLogin() : handleRegister();
                     }
@@ -232,7 +340,7 @@ function AuthPage({ page, setPage, showToast }) {
                 fontSize: 15,
                 fontWeight: 600,
                 marginTop: 8,
-                opacity: busy ? 0.6 : 1
+                opacity: busy ? 0.6 : 1,
               }}
             >
               {busy
@@ -287,9 +395,10 @@ function AuthPage({ page, setPage, showToast }) {
   );
 }
 
-/* ══════════════════ LAYOUT ══════════════════ */
 function MainLayout({ profile, user, page, setPage, logout, showToast, setProfile }) {
   const { isAdmin } = useRole();
+  const { isMobile } = useResponsive();
+
   const nav = isAdmin
     ? [
         { id: "dashboard", icon: "📊", label: "ダッシュボード" },
@@ -305,332 +414,945 @@ function MainLayout({ profile, user, page, setPage, logout, showToast, setProfil
         { id: "invoices", icon: "📄", label: "請求書" },
         { id: "settings", icon: "⚙️", label: "設定" },
       ];
+
+  useEffect(() => {
+    if (!isAdmin && (page === "journal" || page === "accounts" || page === "receipts")) {
+      setPage("dashboard");
+    }
+  }, [isAdmin, page, setPage]);
+
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      <div style={{ width: 220, background: "#1E293B", borderRight: "1px solid #334155", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
-        <div style={{ padding: "20px 16px", borderBottom: "1px solid #334155" }}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 34, height: 34, borderRadius: 9, background: "linear-gradient(135deg,#10B981,#059669)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#fff" }}>¥</div><div><div style={{ fontSize: 13, fontWeight: 600, color: "#F1F5F9" }}>A4-Kaikei</div><div style={{ fontSize: 10, color: "#64748B", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.companyName}</div></div></div></div>
-        <nav style={{ padding: "10px 8px", flex: 1 }}>{nav.map(n => <button key={n.id} onClick={() => setPage(n.id)} style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "9px 11px", borderRadius: 7, border: "none", cursor: "pointer", background: page === n.id ? "rgba(16,185,129,.15)" : "transparent", color: page === n.id ? "#34D399" : "#94A3B8", fontSize: 13, fontWeight: page === n.id ? 600 : 400, marginBottom: 2, textAlign: "left" }}><span style={{ fontSize: 15 }}>{n.icon}</span> {n.label}</button>)}</nav>
-        <div style={{ padding: "14px 12px", borderTop: "1px solid #334155" }}>
-          <div style={{ fontSize: 11, color: "#64748B", marginBottom: 4, padding: "0 6px" }}>{profile.email}</div>
-          <div style={{ fontSize: 10, padding: "0 6px", marginBottom: 8 }}><span style={{ background: isAdmin ? "rgba(16,185,129,.15)" : "rgba(59,130,246,.15)", color: isAdmin ? "#10B981" : "#60A5FA", padding: "1px 8px", borderRadius: 4, fontWeight: 600 }}>{isAdmin ? "管理者" : "閲覧メンバー"}</span></div>
-          <button onClick={logout} style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #334155", background: "transparent", color: "#EF4444", fontSize: 12, cursor: "pointer" }}>ログアウト</button>
+    <div style={{ minHeight: "100vh", display: isMobile ? "block" : "flex" }}>
+      {!isMobile ? (
+        <div
+          style={{
+            width: 220,
+            background: "#1E293B",
+            borderRight: "1px solid #334155",
+            display: "flex",
+            flexDirection: "column",
+            flexShrink: 0,
+            position: "sticky",
+            top: 0,
+            height: "100vh",
+            overflowY: "auto",
+          }}
+        >
+          <div style={{ padding: "20px 16px", borderBottom: "1px solid #334155" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 9,
+                  background: "linear-gradient(135deg,#10B981,#059669)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: "#fff",
+                }}
+              >
+                ¥
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#F1F5F9" }}>A4-Kaikei</div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "#64748B",
+                    maxWidth: 120,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {profile.companyName}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <nav style={{ padding: "10px 8px", flex: 1 }}>
+            {nav.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => setPage(n.id)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  width: "100%",
+                  padding: "9px 11px",
+                  borderRadius: 7,
+                  border: "none",
+                  cursor: "pointer",
+                  background: page === n.id ? "rgba(16,185,129,.15)" : "transparent",
+                  color: page === n.id ? "#34D399" : "#94A3B8",
+                  fontSize: 13,
+                  fontWeight: page === n.id ? 600 : 400,
+                  marginBottom: 2,
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ fontSize: 15 }}>{n.icon}</span>
+                {n.label}
+              </button>
+            ))}
+          </nav>
+
+          <div style={{ padding: "14px 12px", borderTop: "1px solid #334155" }}>
+            <div style={{ fontSize: 11, color: "#64748B", marginBottom: 4, padding: "0 6px" }}>{profile.email}</div>
+            <div style={{ fontSize: 10, padding: "0 6px", marginBottom: 8 }}>
+              <span
+                style={{
+                  background: isAdmin ? "rgba(16,185,129,.15)" : "rgba(59,130,246,.15)",
+                  color: isAdmin ? "#10B981" : "#60A5FA",
+                  padding: "1px 8px",
+                  borderRadius: 4,
+                  fontWeight: 600,
+                }}
+              >
+                {isAdmin ? "管理者" : "閲覧メンバー"}
+              </span>
+            </div>
+            <button
+              onClick={logout}
+              style={{
+                width: "100%",
+                padding: "7px 10px",
+                borderRadius: 6,
+                border: "1px solid #334155",
+                background: "transparent",
+                color: "#EF4444",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              ログアウト
+            </button>
+          </div>
         </div>
-      </div>
-      <div style={{ flex: 1, padding: 28, overflowY: "auto", maxHeight: "100vh" }}>
+      ) : (
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 20,
+            background: "#1E293B",
+            borderBottom: "1px solid #334155",
+          }}
+        >
+          <div style={{ padding: "12px 14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9" }}>A4-Kaikei</div>
+                <div style={{ fontSize: 11, color: "#64748B" }}>{profile.companyName}</div>
+              </div>
+              <button
+                onClick={logout}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 6,
+                  border: "1px solid #334155",
+                  background: "transparent",
+                  color: "#EF4444",
+                  fontSize: 11,
+                  cursor: "pointer",
+                }}
+              >
+                ログアウト
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                overflowX: "auto",
+                paddingBottom: 4,
+              }}
+            >
+              {nav.map((n) => (
+                <button
+                  key={n.id}
+                  onClick={() => setPage(n.id)}
+                  style={{
+                    flex: "0 0 auto",
+                    padding: "8px 12px",
+                    borderRadius: 999,
+                    border: "1px solid #334155",
+                    background: page === n.id ? "rgba(16,185,129,.15)" : "#0F172A",
+                    color: page === n.id ? "#34D399" : "#94A3B8",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {n.icon} {n.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div
+        style={{
+          flex: 1,
+          padding: isMobile ? 14 : 28,
+          overflowY: "auto",
+          maxHeight: isMobile ? "none" : "100vh",
+        }}
+      >
         <div style={{ maxWidth: 960, margin: "0 auto", animation: "fadeIn .3s ease" }}>
           {!isAdmin && page !== "invoices" && <ReadOnlyBanner />}
+
           {page === "dashboard" && <Dashboard user={user} profile={profile} setPage={setPage} />}
-          {page === "journal" && <JournalEntry user={user} showToast={showToast} setPage={setPage} />}
+          {page === "journal" && isAdmin && <JournalEntry user={user} showToast={showToast} setPage={setPage} />}
           {page === "ledger" && <Ledger user={user} showToast={showToast} />}
           {page === "invoices" && <InvoicesPage user={user} profile={profile} showToast={showToast} />}
-          {page === "receipts" && <Receipts user={user} showToast={showToast} />}
-          {page === "settings" && <SettingsPage user={user} profile={profile} showToast={showToast} setProfile={setProfile}/>}
-          {page === "accounts" && <AccountsPage user={user} showToast={showToast} />}
+          {page === "receipts" && isAdmin && <Receipts user={user} showToast={showToast} />}
+          {page === "settings" && <SettingsPage user={user} profile={profile} showToast={showToast} setProfile={setProfile} />}
+          {page === "accounts" && isAdmin && <AccountsPage user={user} showToast={showToast} />}
         </div>
       </div>
     </div>
   );
 }
 
-/* ══════════════════ DASHBOARD ══════════════════ */
+/* ══════════════════ Dashboard ══════════════════ */
 function Dashboard({ user, profile, setPage }) {
-  const [entries, setEntries] = useState([]); const [invoices, setInvoices] = useState([]); const [loading, setLoading] = useState(true);
+  const [entries, setEntries] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
   const { isAdmin } = useRole();
-  useEffect(() => { (async () => { const eS = await getDocs(collection(db, "entries")); const eA = []; eS.forEach(d => eA.push({ id: d.id, ...d.data() })); setEntries(eA); const iS = await getDocs(collection(db, "invoices")); const iA = []; iS.forEach(d => iA.push({ id: d.id, ...d.data() })); setInvoices(iA); setLoading(false); })(); }, []);
-  const now = new Date(); const mk = monthKey(now); const me = entries.filter(e => e.date && monthKey(e.date) === mk);
-  const inc = me.filter(e => e.type === "income").reduce((s, e) => s + (e.amount || 0), 0);
-  const exp = me.filter(e => e.type === "expense").reduce((s, e) => s + (e.amount || 0), 0);
-  const profit = inc - exp; const unpaid = invoices.filter(i => i.status === "sent" || i.status === "overdue"); const unpaidTotal = unpaid.reduce((s, i) => s + (i.total || 0), 0);
-  const monthly = useMemo(() => { const d = []; for (let i = 5; i >= 0; i--) { const dt = new Date(now.getFullYear(), now.getMonth() - i, 1); const m = monthKey(dt); const me2 = entries.filter(e => e.date && monthKey(e.date) === m); d.push({ month: `${dt.getMonth()+1}月`, income: me2.filter(e => e.type === "income").reduce((s, e) => s + (e.amount || 0), 0), expense: me2.filter(e => e.type === "expense").reduce((s, e) => s + (e.amount || 0), 0) }); } return d; }, [entries, now]);
-  const maxV = Math.max(...monthly.map(d => Math.max(d.income, d.expense)), 1);
-  // 1. 収入の合計を計算
-  const totalIn = entries.filter(e => e.type === "income").reduce((s, e) => s + e.amount, 0);
-  // 2. 支出の合計を計算
-  const totalOut = entries.filter(e => e.type === "expense").reduce((s, e) => s + e.amount, 0);
-  // 3. 残高（利益）を計算
+  const { isMobile } = useResponsive();
+
+  useEffect(() => {
+    (async () => {
+      const eS = await getDocs(collection(db, "entries"));
+      const eA = [];
+      eS.forEach((d) => eA.push({ id: d.id, ...d.data() }));
+      setEntries(eA);
+
+      const iS = await getDocs(collection(db, "invoices"));
+      const iA = [];
+      iS.forEach((d) => iA.push({ id: d.id, ...d.data() }));
+      setInvoices(iA);
+
+      setLoading(false);
+    })();
+  }, []);
+
+  const now = new Date();
+  const mk = monthKey(now);
+  const me = entries.filter((e) => e.date && monthKey(e.date) === mk);
+
+  const inc = me.filter((e) => e.type === "income").reduce((s, e) => s + (e.amount || 0), 0);
+  const exp = me.filter((e) => e.type === "expense").reduce((s, e) => s + (e.amount || 0), 0);
+  const profit = inc - exp;
+  const unpaid = invoices.filter((i) => i.status === "sent" || i.status === "overdue");
+  const unpaidTotal = unpaid.reduce((s, i) => s + (i.total || 0), 0);
+
+  const monthly = useMemo(() => {
+    const d = [];
+    for (let i = 5; i >= 0; i--) {
+      const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const m = monthKey(dt);
+      const me2 = entries.filter((e) => e.date && monthKey(e.date) === m);
+      d.push({
+        month: `${dt.getMonth() + 1}月`,
+        income: me2.filter((e) => e.type === "income").reduce((s, e) => s + (e.amount || 0), 0),
+        expense: me2.filter((e) => e.type === "expense").reduce((s, e) => s + (e.amount || 0), 0),
+      });
+    }
+    return d;
+  }, [entries, now]);
+
+  const maxV = Math.max(...monthly.map((d) => Math.max(d.income, d.expense)), 1);
+
+  const totalIn = entries.filter((e) => e.type === "income").reduce((s, e) => s + e.amount, 0);
+  const totalOut = entries.filter((e) => e.type === "expense").reduce((s, e) => s + e.amount, 0);
   const balance = totalIn - totalOut;
+
   if (loading) return <p style={{ color: "#64748B" }}>読み込み中...</p>;
-  const stats = [{label:"残高",value:fmtYen(balance),color:"#FFFFFF"},{ label: "今月の収入", value: fmtYen(inc), color: "#10B981", icon: "↑" },{ label: "今月の支出", value: fmtYen(exp), color: "#F59E0B", icon: "↓" }];
-  return (<div><PageTitle sub={`${profile.companyName} — ${fmtMonth(now)}`}>ダッシュボード</PageTitle>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 24 }}>{stats.map((s, i) => <Card key={i} style={{ padding: 20 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}><span style={{ fontSize: 12, color: "#94A3B8" }}>{s.label}</span><span style={{ fontSize: 18 }}>{s.icon}</span></div><div style={{ fontSize: 22, fontWeight: 700, color: s.color, fontFamily: "'Space Mono',monospace" }}>{s.value}</div>{s.sub && <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>{s.sub}</div>}</Card>)}</div>
-    <Card style={{ marginBottom: 24 }}><h3 style={{ fontSize: 15, fontWeight: 600, color: "#F1F5F9", marginBottom: 20 }}>月別収支推移</h3><div style={{ display: "flex", alignItems: "flex-end", gap: 12, height: 160 }}>{monthly.map((d, i) => <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}><div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 130, width: "100%" }}><div style={{ flex: 1, background: "linear-gradient(180deg,#10B981,#059669)", borderRadius: "4px 4px 0 0", minHeight: 2, height: `${(d.income / maxV) * 100}%` }} /><div style={{ flex: 1, background: "linear-gradient(180deg,#F59E0B,#D97706)", borderRadius: "4px 4px 0 0", minHeight: 2, height: `${(d.expense / maxV) * 100}%` }} /></div><span style={{ fontSize: 11, color: "#64748B" }}>{d.month}</span></div>)}</div><div style={{ display: "flex", gap: 16, marginTop: 12, justifyContent: "center" }}><span style={{ fontSize: 11, color: "#94A3B8" }}><span style={{ display: "inline-block", width: 10, height: 10, background: "#10B981", borderRadius: 2, marginRight: 4 }} />収入</span><span style={{ fontSize: 11, color: "#94A3B8" }}><span style={{ display: "inline-block", width: 10, height: 10, background: "#F59E0B", borderRadius: 2, marginRight: 4 }} />支出</span></div></Card>
-    {isAdmin && <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>{[["journal","📒","仕訳を入力"],["invoices","📄","請求書を作成"],["receipts","🧾","領収書を保存"]].map(([id,ic,lb]) => <Card key={id} style={{ cursor: "pointer" }} onClick={() => setPage(id)}><div style={{ textAlign: "center", padding: "8px 0" }}><div style={{ fontSize: 28, marginBottom: 8 }}>{ic}</div><div style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9" }}>{lb}</div></div></Card>)}</div>}
-  </div>);
+
+  const stats = [
+    { label: "残高", value: fmtYen(balance), color: "#FFFFFF" },
+    { label: "今月の収入", value: fmtYen(inc), color: "#10B981", icon: "↑" },
+    { label: "今月の支出", value: fmtYen(exp), color: "#F59E0B", icon: "↓" },
+  ];
+
+  return (
+    <div>
+      <PageTitle sub={`${profile.companyName} — ${fmtMonth(now)}`}>ダッシュボード</PageTitle>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)",
+          gap: 14,
+          marginBottom: 24,
+        }}
+      >
+        {stats.map((s, i) => (
+          <Card key={i} style={{ padding: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontSize: 12, color: "#94A3B8" }}>{s.label}</span>
+              <span style={{ fontSize: 18 }}>{s.icon}</span>
+            </div>
+            <div
+              style={{
+                fontSize: isMobile ? 20 : 22,
+                fontWeight: 700,
+                color: s.color,
+                fontFamily: "'Space Mono',monospace",
+              }}
+            >
+              {s.value}
+            </div>
+            {s.sub && <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>{s.sub}</div>}
+          </Card>
+        ))}
+      </div>
+
+      <Card style={{ marginBottom: 24 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: "#F1F5F9", marginBottom: 20 }}>月別収支推移</h3>
+
+        <div style={{ overflowX: "auto" }}>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 12, height: 160, minWidth: 420 }}>
+            {monthly.map((d, i) => (
+              <div
+                key={i}
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 130, width: "100%" }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      background: "linear-gradient(180deg,#10B981,#059669)",
+                      borderRadius: "4px 4px 0 0",
+                      minHeight: 2,
+                      height: `${(d.income / maxV) * 100}%`,
+                    }}
+                  />
+                  <div
+                    style={{
+                      flex: 1,
+                      background: "linear-gradient(180deg,#F59E0B,#D97706)",
+                      borderRadius: "4px 4px 0 0",
+                      minHeight: 2,
+                      height: `${(d.expense / maxV) * 100}%`,
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: 11, color: "#64748B" }}>{d.month}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 16, marginTop: 12, justifyContent: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: "#94A3B8" }}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 10,
+                height: 10,
+                background: "#10B981",
+                borderRadius: 2,
+                marginRight: 4,
+              }}
+            />
+            収入
+          </span>
+          <span style={{ fontSize: 11, color: "#94A3B8" }}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 10,
+                height: 10,
+                background: "#F59E0B",
+                borderRadius: 2,
+                marginRight: 4,
+              }}
+            />
+            支出
+          </span>
+        </div>
+      </Card>
+
+      {isAdmin && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)",
+            gap: 14,
+          }}
+        >
+          {[["journal", "📒", "仕訳を入力"], ["invoices", "📄", "請求書を作成"], ["receipts", "🧾", "領収書を保存"]].map(
+            ([id, ic, lb]) => (
+              <Card key={id} style={{ cursor: "pointer" }} onClick={() => setPage(id)}>
+                <div style={{ textAlign: "center", padding: "8px 0" }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>{ic}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9" }}>{lb}</div>
+                </div>
+              </Card>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ══════════════════ JOURNAL ══════════════════ */
 function JournalEntry({ user, showToast, setPage }) {
   const { isAdmin } = useRole();
-  const [accounts, setAccounts] = useState([]); const [type, setType] = useState("expense"); const [accountId, setAccountId] = useState(""); const [amount, setAmount] = useState(""); const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); const [description, setDescription] = useState(""); const [taxRate, setTaxRate] = useState(10); const [busy, setBusy] = useState(false);
-  useEffect(() => { (async () => { const s = await getDoc(doc(db, "settings", "accounts")); if (s.exists()) setAccounts(s.data().list || []); })(); }, []);
-  const filtered = accounts.filter(a => a.type === type); const taxAmount = Math.floor((parseInt(amount) || 0) * taxRate / (100 + taxRate));
-  const handleSubmit = async () => { if (!isAdmin) return showToast("管理者のみ登録できます", "error"); if (!accountId || !amount || !date) return showToast("必須項目を入力してください", "error"); setBusy(true); const acc = accounts.find(a => a.id === accountId); await setDoc(doc(db, "entries", uid()), { type, accountId, accountName: acc?.name || "", amount: parseInt(amount), date, description, taxRate, taxAmount, createdBy: user.uid, createdAt: serverTimestamp() }); showToast("仕訳を登録しました！"); setAmount(""); setDescription(""); setAccountId(""); setBusy(false); };
-  if (!isAdmin) return <div><PageTitle sub="管理者のみ入力可能です">仕訳入力</PageTitle><Card><p style={{ color: "#475569", textAlign: "center", padding: 20 }}>仕訳の入力は管理者のみ可能です。帳簿から閲覧できます。</p></Card></div>;
-  return (<div><PageTitle sub="収入・支出を記録">仕訳入力</PageTitle><Card><div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-    <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>区分</label><div style={{ display: "flex", gap: 8 }}>{[["income","収入","#10B981"],["expense","支出","#F59E0B"]].map(([t,l,c]) => <button key={t} onClick={() => { setType(t); setAccountId(""); }} style={{ flex: 1, padding: 12, borderRadius: 8, border: `2px solid ${type === t ? c : "#334155"}`, background: type === t ? c + "15" : "#0F172A", color: type === t ? c : "#94A3B8", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>{l}</button>)}</div></div>
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}><div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>勘定科目</label><select style={{ ...inputBase, cursor: "pointer" }} value={accountId} onChange={e => setAccountId(e.target.value)}><option value="">選択してください</option>{filtered.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div><div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>日付</label><input type="date" style={{ ...inputBase, colorScheme: "dark" }} value={date} onChange={e => setDate(e.target.value)} /></div></div>
-    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}><div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>金額（税込）</label><input style={inputBase} type="number" placeholder="10000" value={amount} onChange={e => setAmount(e.target.value)} />{amount && <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>うち消費税: {fmtYen(taxAmount)}</div>}</div><div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>税率</label><select style={{ ...inputBase, cursor: "pointer" }} value={taxRate} onChange={e => setTaxRate(+e.target.value)}><option value={10}>10%</option><option value={8}>8%（軽減）</option><option value={0}>非課税</option></select></div></div>
-    <div><label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>摘要</label><input style={inputBase} placeholder="取引内容を入力..." value={description} onChange={e => setDescription(e.target.value)} /></div>
-    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><Btn variant="ghost" onClick={() => setPage("ledger")}>帳簿を見る</Btn><Btn onClick={handleSubmit} disabled={busy}>{busy ? "保存中..." : "登録する"}</Btn></div>
-  </div></Card></div>);
+  const { isMobile } = useResponsive();
+
+  const [accounts, setAccounts] = useState([]);
+  const [type, setType] = useState("expense");
+  const [accountId, setAccountId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [description, setDescription] = useState("");
+  const [taxRate, setTaxRate] = useState(10);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const s = await getDoc(doc(db, "settings", "accounts"));
+      if (s.exists()) setAccounts(s.data().list || []);
+    })();
+  }, []);
+
+  const filtered = accounts.filter((a) => a.type === type);
+  const taxAmount = Math.floor(((parseInt(amount) || 0) * taxRate) / (100 + taxRate));
+
+  const handleSubmit = async () => {
+    if (!isAdmin) return showToast("管理者のみ登録できます", "error");
+    if (!accountId || !amount || !date) return showToast("必須項目を入力してください", "error");
+
+    setBusy(true);
+    const acc = accounts.find((a) => a.id === accountId);
+
+    await setDoc(doc(db, "entries", uid()), {
+      type,
+      accountId,
+      accountName: acc?.name || "",
+      amount: parseInt(amount),
+      date,
+      description,
+      taxRate,
+      taxAmount,
+      createdBy: user.uid,
+      createdAt: serverTimestamp(),
+    });
+
+    showToast("仕訳を登録しました！");
+    setAmount("");
+    setDescription("");
+    setAccountId("");
+    setBusy(false);
+  };
+
+  if (!isAdmin) {
+    return (
+      <div>
+        <PageTitle sub="管理者のみ入力可能です">仕訳入力</PageTitle>
+        <Card>
+          <p style={{ color: "#475569", textAlign: "center", padding: 20 }}>
+            仕訳の入力は管理者のみ可能です。帳簿から閲覧できます。
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <PageTitle sub="収入・支出を記録">仕訳入力</PageTitle>
+
+      <Card>
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div>
+            <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>区分</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[["income", "収入", "#10B981"], ["expense", "支出", "#F59E0B"]].map(([t, l, c]) => (
+                <button
+                  key={t}
+                  onClick={() => {
+                    setType(t);
+                    setAccountId("");
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: 12,
+                    borderRadius: 8,
+                    border: `2px solid ${type === t ? c : "#334155"}`,
+                    background: type === t ? c + "15" : "#0F172A",
+                    color: type === t ? c : "#94A3B8",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+            <div>
+              <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>勘定科目</label>
+              <select style={{ ...inputBase, cursor: "pointer" }} value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                <option value="">選択してください</option>
+                {filtered.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>日付</label>
+              <input
+                type="date"
+                style={{ ...inputBase, colorScheme: "dark" }}
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 16 }}>
+            <div>
+              <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>金額（税込）</label>
+              <input
+                style={inputBase}
+                type="number"
+                placeholder="10000"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+              {amount && <div style={{ fontSize: 11, color: "#64748B", marginTop: 4 }}>うち消費税: {fmtYen(taxAmount)}</div>}
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>税率</label>
+              <select style={{ ...inputBase, cursor: "pointer" }} value={taxRate} onChange={(e) => setTaxRate(+e.target.value)}>
+                <option value={10}>10%</option>
+                <option value={8}>8%（軽減）</option>
+                <option value={0}>非課税</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>摘要</label>
+            <input
+              style={inputBase}
+              placeholder="取引内容を入力..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              justifyContent: "flex-end",
+              flexDirection: isMobile ? "column" : "row",
+            }}
+          >
+            <Btn variant="ghost" onClick={() => setPage("ledger")} style={isMobile ? { width: "100%" } : {}}>
+              帳簿を見る
+            </Btn>
+            <Btn onClick={handleSubmit} disabled={busy} style={isMobile ? { width: "100%" } : {}}>
+              {busy ? "保存中..." : "登録する"}
+            </Btn>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 /* ══════════════════ LEDGER ══════════════════ */
 function Ledger({ user, showToast }) {
   const { isAdmin } = useRole();
-  const [entries, setEntries] = useState([]); const [loading, setLoading] = useState(true); const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
-  const load = useCallback(async () => { setLoading(true); const s = await getDocs(collection(db, "entries")); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); setEntries(a.sort((a, b) => (b.date || "").localeCompare(a.date || ""))); setLoading(false); }, []);
-  useEffect(() => { load(); }, [load]);
-  const filtered = entries.filter(e => e.date && e.date.startsWith(filterMonth)); const tInc = filtered.filter(e => e.type === "income").reduce((s, e) => s + (e.amount || 0), 0); const tExp = filtered.filter(e => e.type === "expense").reduce((s, e) => s + (e.amount || 0), 0);
-  const del = async (id) => { if (!isAdmin) return showToast("管理者のみ削除できます", "error"); await deleteDoc(doc(db, "entries", id)); showToast("削除しました"); load(); };
-  return (<div><PageTitle right={<input type="month" style={{ ...inputBase, width: "auto", colorScheme: "dark" }} value={filterMonth} onChange={e => setFilterMonth(e.target.value)} />}>帳簿</PageTitle>
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 20 }}><Card style={{ padding: 16 }}><div style={{ fontSize: 11, color: "#94A3B8" }}>収入合計</div><div style={{ fontSize: 20, fontWeight: 700, color: "#10B981", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tInc)}</div></Card><Card style={{ padding: 16 }}><div style={{ fontSize: 11, color: "#94A3B8" }}>支出合計</div><div style={{ fontSize: 20, fontWeight: 700, color: "#F59E0B", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tExp)}</div></Card><Card style={{ padding: 16 }}><div style={{ fontSize: 11, color: "#94A3B8" }}>差引</div><div style={{ fontSize: 20, fontWeight: 700, color: tInc - tExp >= 0 ? "#3B82F6" : "#EF4444", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tInc - tExp)}</div></Card></div>
-    {loading ? <p style={{ color: "#64748B" }}>読み込み中...</p> : filtered.length === 0 ? <Card><p style={{ color: "#475569", textAlign: "center", padding: 20 }}>この月の帳簿はありません</p></Card> : <Card style={{ padding: 0, overflow: "hidden" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}><thead><tr style={{ background: "#0F172A" }}>{["日付","区分","勘定科目","摘要","金額",...(isAdmin ? [""] : [])].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: "#64748B", fontWeight: 500, fontSize: 12 }}>{h}</th>)}</tr></thead><tbody>{filtered.map(e => <tr key={e.id} style={{ borderTop: "1px solid #334155" }}><td style={{ padding: "10px 14px", color: "#94A3B8", fontFamily: "'Space Mono',monospace", fontSize: 12 }}>{e.date}</td><td style={{ padding: "10px 14px" }}><span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: e.type === "income" ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)", color: e.type === "income" ? "#10B981" : "#F59E0B" }}>{e.type === "income" ? "収入" : "支出"}</span></td><td style={{ padding: "10px 14px", color: "#E2E8F0" }}>{e.accountName || e.account || "—"}</td><td style={{ padding: "10px 14px", color: "#94A3B8" }}>{e.description || e.note || "—"}</td><td style={{ padding: "10px 14px", fontWeight: 600, fontFamily: "'Space Mono',monospace", color: e.type === "income" ? "#10B981" : "#F59E0B" }}>{fmtYen(e.amount)}</td>{isAdmin && <td style={{ padding: "10px 14px" }}><button onClick={() => del(e.id)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14 }}>✕</button></td>}</tr>)}</tbody></table></Card>}
-  </div>);
-}
+  const { isMobile } = useResponsive();
 
-/* ══════════════════ INVOICES ══════════════════ */
-function InvoicesPage({ user, profile, showToast }) {
-  const { isAdmin } = useRole();
-  const [invoices, setInvoices] = useState([]);
+  const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [issaving, setIsSaving] = useState(false);
-  const [accountList, setAccountList] = useState([]);
-  const [selectedAccount, setSelectedAccount] = useState("");
-  
-  // ファイルアップロード用のState
-  const [file, setFile] = useState(null);
-
-  const [form, setForm] = useState({ 
-    client: "", 
-    items: [{ name: "", qty: 1, price: 0, taxRate: 10 }], 
-    dueDate: "", 
-    notes: "",
-    receiptUrl: "",      
-    receiptDriveId: ""   
-  });
+  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
 
   const load = useCallback(async () => {
     setLoading(true);
-    try {
-      const s = await getDocs(collection(db, "invoices"));
-      const a = [];
-      s.forEach(d => a.push({ id: d.id, ...d.data() }));
-      setInvoices(a.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-    } catch (e) { showToast("読み込み失敗", "error"); }
+    const s = await getDocs(collection(db, "entries"));
+    const a = [];
+    s.forEach((d) => a.push({ id: d.id, ...d.data() }));
+    setEntries(a.sort((a, b) => (b.date || "").localeCompare(a.date || "")));
     setLoading(false);
-  }, [showToast]);
+  }, []);
 
   useEffect(() => {
     load();
-    const loadAccounts = async () => {
-      const snap = await getDoc(doc(db, "settings", "accounts"));
-      if (snap.exists()) {
-        const list = snap.data().list.filter(a => a.type === "expense");
-        setAccountList(list);
-        if (list.length > 0) setSelectedAccount(list[0].name);
-      }
-    };
-    loadAccounts();
   }, [load]);
 
-  const calc = useMemo(() => {
-    let sub10 = 0, sub8 = 0, sub0 = 0;
-    form.items.forEach(item => {
-      const amount = (item.qty || 1) * (item.price || 0);
-      if (item.taxRate === 8) sub8 += amount;
-      else if (item.taxRate === 0) sub0 += amount;
-      else sub10 += amount;
-    });
-    const tax10 = Math.floor(sub10 * 0.1);
-    const tax8 = Math.floor(sub8 * 0.08);
-    return { total: sub10 + sub8 + sub0 + tax10 + tax8, tax: tax10 + tax8 };
-  }, [form.items]);
+  const filtered = entries.filter((e) => e.date && e.date.startsWith(filterMonth));
+  const tInc = filtered.filter((e) => e.type === "income").reduce((s, e) => s + (e.amount || 0), 0);
+  const tExp = filtered.filter((e) => e.type === "expense").reduce((s, e) => s + (e.amount || 0), 0);
 
-  // 保存処理（アップロード機能）
-const saveInvoice = async () => {
-    if (!form.client) return showToast("買い出し先を入力してください", "error");
-    setIsSaving(true);
-    try {
-      // 初期値を form の値、または空文字に設定（undefinedを回避）
-      let url = form.receiptUrl || "";
-      let driveId = form.receiptDriveId || "";
-
-      // 新しいファイルが選択されている場合のみアップロード
-      if (file) {
-        const res = await gasUpload(file);
-        // GASは fileUrl / fileId というフィールド名で返す
-        url = res?.fileUrl || res?.url || "";
-        driveId = res?.fileId || res?.id || "";
-      }
-
-      const isEdit = !!form.id;
-      const invoiceId = isEdit ? form.id : uid();
-
-      // 保存するデータオブジェクトを作成
-      const payload = {
-        client: form.client || "",
-        items: form.items || [],
-        dueDate: form.dueDate || "",
-        notes: form.notes || "",
-        receiptUrl: url,        // ここが undefined にならないようガード済み
-        receiptDriveId: driveId, // ここが undefined にならないようガード済み
-        total: calc.total || 0,
-        tax: calc.tax || 0,
-        updatedAt: serverTimestamp(),
-      };
-  
-      if (!isEdit) {
-        payload.id = invoiceId;
-        payload.createdBy = user.uid;
-        payload.createdAt = serverTimestamp();
-        payload.status = "draft";
-        payload.companyName = profile?.companyName || user.displayName || "Unknown";
-      }
-  
-      // setDoc を実行
-      await setDoc(doc(db, "invoices", invoiceId), payload, { merge: true });
-      
-      showToast(isEdit ? "更新しました" : "申請しました");
-      
-      // フォームリセット
-      setForm({ client: "", items: [{ name: "", qty: 1, price: 0, taxRate: 10 }], dueDate: "", notes: "", receiptUrl: "", receiptDriveId: "" });
-      setFile(null);
-      setShowForm(false);
-      load();
-    } catch (e) {
-      console.error("Firebase Save Error:", e);
-      showToast("保存に失敗しました。未入力項目がないか確認してください", "error");
-    }
-    setIsSaving(false);
+  const del = async (id) => {
+    if (!isAdmin) return showToast("管理者のみ削除できます", "error");
+    await deleteDoc(doc(db, "entries", id));
+    showToast("削除しました");
+    load();
   };
 
   return (
     <div>
-      <PageTitle right={<Btn onClick={() => { setShowForm(!showForm); if(!showForm) { setForm({client:"", items:[{name:"", qty:1, price:0, taxRate:10}], dueDate:"", notes:"", receiptUrl:"", receiptDriveId:""}); setFile(null); } }}>{showForm ? "閉じる" : "新規申請"}</Btn>}>
-        請求書・立替申請
+      <PageTitle
+        right={
+          <input
+            type="month"
+            style={{ ...inputBase, width: isMobile ? "100%" : "auto", colorScheme: "dark" }}
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+          />
+        }
+      >
+        帳簿
       </PageTitle>
 
-      {showForm && (
-        <Card style={{ marginBottom: 24 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div>
-                <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>買い出し先</label>
-                <input style={inputBase} placeholder="店舗名" value={form.client} onChange={e => setForm({...form, client: e.target.value})} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>日付</label>
-                <input type="date" style={{ ...inputBase, colorScheme: "dark" }} value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})} />
-              </div>
-            </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr",
+          gap: 12,
+          marginBottom: 20,
+        }}
+      >
+        <Card style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, color: "#94A3B8" }}>収入合計</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#10B981", fontFamily: "'Space Mono',monospace" }}>
+            {fmtYen(tInc)}
+          </div>
+        </Card>
 
-            <div>
-              <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>購入明細</label>
-              {form.items.map((item, i) => (
-                <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
-                  <input style={{ ...inputBase, flex: 3 }} placeholder="品目" value={item.name} onChange={e => {
-                    const newItems = [...form.items]; newItems[i].name = e.target.value; setForm({...form, items: newItems});
-                  }} />
-                  <input style={{ ...inputBase, flex: 1.5 }} type="number" placeholder="単価" value={item.price || ""} onChange={e => {
-                    const newItems = [...form.items]; newItems[i].price = Number(e.target.value); setForm({...form, items: newItems});
-                  }} />
-                  <select style={{ ...inputBase, flex: 1.2 }} value={item.taxRate} onChange={e => {
-                    const newItems = [...form.items]; newItems[i].taxRate = Number(e.target.value); setForm({...form, items: newItems});
-                  }}>
-                    <option value={10}>10%</option><option value={8}>8%</option><option value={0}>非課税</option>
-                  </select>
-                  {form.items.length > 1 && (
-                    <button style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 11 }} onClick={() => {
-                      setForm({...form, items: form.items.filter((_, idx) => idx !== i)});
-                    }}>✕</button>
-                  )}
-                </div>
-              ))}
-              <button style={{ background: "none", border: "none", color: "#34D399", fontSize: 12, cursor: "pointer", marginTop: 4, fontWeight: "bold" }} onClick={() => {
-                setForm({...form, items: [...form.items, { name: "", qty: 1, price: 0, taxRate: 10 }]});
-              }}>+ 行を追加</button>
-            </div>
+        <Card style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, color: "#94A3B8" }}>支出合計</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#F59E0B", fontFamily: "'Space Mono',monospace" }}>
+            {fmtYen(tExp)}
+          </div>
+        </Card>
 
-            {/* ファイルアップロード（明細の後） */}
-            <div>
-              <label style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6, display: "block" }}>領収書・レシート</label>
-              <input type="file" accept="image/*,application/pdf" onChange={e => setFile(e.target.files[0])} style={{ fontSize: 12, color: "#E2E8F0" }} />
-              {form.receiptUrl && !file && <p style={{ fontSize: 11, color: "#34D399", marginTop: 4 }}>※ 登録済みのファイルがあります</p>}
-            </div>
+        <Card style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, color: "#94A3B8" }}>差引</div>
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              color: tInc - tExp >= 0 ? "#3B82F6" : "#EF4444",
+              fontFamily: "'Space Mono',monospace",
+            }}
+          >
+            {fmtYen(tInc - tExp)}
+          </div>
+        </Card>
+      </div>
 
-            <div style={{ textAlign: "right", borderTop: "1px solid #334155", paddingTop: 16 }}>
-              <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 4 }}>合計金額 (税込)</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#F1F5F9", fontFamily: "monospace", marginBottom: 16 }}>{fmtYen(calc.total)}</div>
-              <Btn onClick={saveInvoice} disabled={issaving} style={{ width: "100%" }}>{issaving ? "アップロード中..." : "申請を保存する"}</Btn>
-            </div>
+      {loading ? (
+        <p style={{ color: "#64748B" }}>読み込み中...</p>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <p style={{ color: "#475569", textAlign: "center", padding: 20 }}>この月の帳簿はありません</p>
+        </Card>
+      ) : (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "#0F172A" }}>
+                  {["日付", "区分", "勘定科目", "摘要", "金額", ...(isAdmin ? [""] : [])].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: "10px 14px",
+                        textAlign: "left",
+                        color: "#64748B",
+                        fontWeight: 500,
+                        fontSize: 12,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {filtered.map((e) => (
+                  <tr key={e.id} style={{ borderTop: "1px solid #334155" }}>
+                    <td
+                      style={{
+                        padding: "10px 14px",
+                        color: "#94A3B8",
+                        fontFamily: "'Space Mono',monospace",
+                        fontSize: 12,
+                      }}
+                    >
+                      {e.date}
+                    </td>
+
+                    <td style={{ padding: "10px 14px" }}>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          background: e.type === "income" ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)",
+                          color: e.type === "income" ? "#10B981" : "#F59E0B",
+                        }}
+                      >
+                        {e.type === "income" ? "収入" : "支出"}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: "10px 14px", color: "#E2E8F0" }}>{e.accountName || e.account || "—"}</td>
+                    <td style={{ padding: "10px 14px", color: "#94A3B8" }}>{e.description || e.note || "—"}</td>
+                    <td
+                      style={{
+                        padding: "10px 14px",
+                        fontWeight: 600,
+                        fontFamily: "'Space Mono',monospace",
+                        color: e.type === "income" ? "#10B981" : "#F59E0B",
+                      }}
+                    >
+                      {fmtYen(e.amount)}
+                    </td>
+
+                    {isAdmin && (
+                      <td style={{ padding: "10px 14px" }}>
+                        <button
+                          onClick={() => del(e.id)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: "#64748B",
+                            cursor: "pointer",
+                            fontSize: 14,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </Card>
       )}
+    </div>
+  );
+}
 
-      {/* 一覧表示部分 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {loading ? <p style={{textAlign:"center", color:"#64748B"}}>読み込み中...</p> : invoices.length === 0 ? (
-          <Card><p style={{ color: "#475569", textAlign: "center", padding: 24, fontSize: 14 }}>申請書はありません</p></Card>
-        ) : invoices.map(inv => (
-          <Card key={inv.id} style={{ padding: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-              <div>
-                <div style={{ fontWeight: 700, color: "#F1F5F9" }}>{inv.companyName} <StatusBadge status={inv.status} /></div>
-                <div style={{ fontSize: 13, color: "#34D399" }}>{inv.client}</div>
-                {inv.account && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>科目: {inv.account}</div>}
-                {inv.receiptUrl && <a href={inv.receiptUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#60A5FA", textDecoration: "none", display: "block", marginTop: 4 }}>領収書を表示 ↗</a>}
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "monospace", color: "#F1F5F9" }}>{fmtYen(inv.total)}</div>
-                <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
-                  {(isAdmin || (inv.createdBy === user.uid && inv.status === "draft")) && (
-                    <button onClick={() => { setForm(inv); setShowForm(true); setFile(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }} style={{ background: "none", border: "1px solid #334155", color: "#94A3B8", padding: "4px 8px", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>編集</button>
-                  )}
-                  {isAdmin && inv.status === "draft" && (
-                    <Btn variant="accent" style={{ fontSize: 11, padding: "4px 12px" }} onClick={async () => { await updateDoc(doc(db, "invoices", inv.id), { status: "sent" }); showToast("承認しました"); load(); }}>承認</Btn>
-                  )}
-                  {isAdmin && inv.status === "sent" && (<>
-                    <select value={inv._selAccount || ""} onChange={e => { inv._selAccount = e.target.value; setInvoices([...invoices]); }}
-                      style={{ padding: "3px 6px", fontSize: 11, background: "#0F172A", border: "1px solid #334155", borderRadius: 4, color: "#E2E8F0", maxWidth: 120 }}>
-                      <option value="">科目を選択</option>
-                      {accountList.filter(a => a.type === "expense").map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-                    </select>
-                    <Btn variant="primary" style={{ fontSize: 11, padding: "4px 12px" }} onClick={async () => {
-                      const acct = inv._selAccount || selectedAccount;
-                      if (!acct) return showToast("科目を選択してください", "error");
-                      const entryId = uid();
-                      await setDoc(doc(db, "entries", entryId), { date: inv.dueDate || fmtDate(new Date()), type: "expense", accountName: acct, amount: inv.total, tax: inv.tax, description: `自動: ${inv.client}`, companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(), fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl || "" });
-                      await updateDoc(doc(db, "invoices", inv.id), { status: "paid", linkedEntryId: entryId, account: acct });
-                      showToast("完了しました — 仕訳を自動登録しました");
-                      load();
-                    }}>完了</Btn>
-                  </>)}
-                  {(isAdmin || inv.createdBy === user.uid) && (
-                    <button onClick={async () => {
-                      if (!window.confirm("削除しますか？\n関連する仕訳データも削除されます。")) return;
-                      // 領収書ファイルを削除
-                      if (inv.receiptDriveId) try { await gasDelete(inv.receiptDriveId); } catch {}
-                      // 紐づく仕訳を削除
-                      if (inv.linkedEntryId) try { await deleteDoc(doc(db, "entries", inv.linkedEntryId)); } catch {}
-                      // fromInvoiceId で紐づく仕訳も検索して削除
-                      try {
-                        const linked = await getDocs(query(collection(db, "entries"), where("fromInvoiceId", "==", inv.id)));
-                        for (const d of linked.docs) { await deleteDoc(doc(db, "entries", d.id)); }
-                      } catch {}
-                      // 請求書本体を削除
-                      await deleteDoc(doc(db, "invoices", inv.id));
-                      showToast("請求書と関連データを削除しました");
-                      load();
-                    }} style={{ background: "none", border: "none", color: "#EF4444", fontSize: 11, cursor: "pointer" }}>削除</button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </Card>
-        ))}
+/* ══════════════════ INVOICES ══════════════════ */
+function Ledger({ user, showToast }) {
+  const { isAdmin } = useRole();
+  const { isMobile } = useResponsive();
+
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const s = await getDocs(collection(db, "entries"));
+    const a = [];
+    s.forEach((d) => a.push({ id: d.id, ...d.data() }));
+    setEntries(a.sort((a, b) => (b.date || "").localeCompare(a.date || "")));
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = entries.filter((e) => e.date && e.date.startsWith(filterMonth));
+  const tInc = filtered.filter((e) => e.type === "income").reduce((s, e) => s + (e.amount || 0), 0);
+  const tExp = filtered.filter((e) => e.type === "expense").reduce((s, e) => s + (e.amount || 0), 0);
+
+  const del = async (id) => {
+    if (!isAdmin) return showToast("管理者のみ削除できます", "error");
+    await deleteDoc(doc(db, "entries", id));
+    showToast("削除しました");
+    load();
+  };
+
+  return (
+    <div>
+      <PageTitle
+        right={
+          <input
+            type="month"
+            style={{ ...inputBase, width: isMobile ? "100%" : "auto", colorScheme: "dark" }}
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+          />
+        }
+      >
+        帳簿
+      </PageTitle>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr",
+          gap: 12,
+          marginBottom: 20,
+        }}
+      >
+        <Card style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, color: "#94A3B8" }}>収入合計</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#10B981", fontFamily: "'Space Mono',monospace" }}>
+            {fmtYen(tInc)}
+          </div>
+        </Card>
+
+        <Card style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, color: "#94A3B8" }}>支出合計</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#F59E0B", fontFamily: "'Space Mono',monospace" }}>
+            {fmtYen(tExp)}
+          </div>
+        </Card>
+
+        <Card style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, color: "#94A3B8" }}>差引</div>
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              color: tInc - tExp >= 0 ? "#3B82F6" : "#EF4444",
+              fontFamily: "'Space Mono',monospace",
+            }}
+          >
+            {fmtYen(tInc - tExp)}
+          </div>
+        </Card>
       </div>
+
+      {loading ? (
+        <p style={{ color: "#64748B" }}>読み込み中...</p>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <p style={{ color: "#475569", textAlign: "center", padding: 20 }}>この月の帳簿はありません</p>
+        </Card>
+      ) : (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "#0F172A" }}>
+                  {["日付", "区分", "勘定科目", "摘要", "金額", ...(isAdmin ? [""] : [])].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: "10px 14px",
+                        textAlign: "left",
+                        color: "#64748B",
+                        fontWeight: 500,
+                        fontSize: 12,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {filtered.map((e) => (
+                  <tr key={e.id} style={{ borderTop: "1px solid #334155" }}>
+                    <td
+                      style={{
+                        padding: "10px 14px",
+                        color: "#94A3B8",
+                        fontFamily: "'Space Mono',monospace",
+                        fontSize: 12,
+                      }}
+                    >
+                      {e.date}
+                    </td>
+
+                    <td style={{ padding: "10px 14px" }}>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          background: e.type === "income" ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)",
+                          color: e.type === "income" ? "#10B981" : "#F59E0B",
+                        }}
+                      >
+                        {e.type === "income" ? "収入" : "支出"}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: "10px 14px", color: "#E2E8F0" }}>{e.accountName || e.account || "—"}</td>
+                    <td style={{ padding: "10px 14px", color: "#94A3B8" }}>{e.description || e.note || "—"}</td>
+                    <td
+                      style={{
+                        padding: "10px 14px",
+                        fontWeight: 600,
+                        fontFamily: "'Space Mono',monospace",
+                        color: e.type === "income" ? "#10B981" : "#F59E0B",
+                      }}
+                    >
+                      {fmtYen(e.amount)}
+                    </td>
+
+                    {isAdmin && (
+                      <td style={{ padding: "10px 14px" }}>
+                        <button
+                          onClick={() => del(e.id)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: "#64748B",
+                            cursor: "pointer",
+                            fontSize: 14,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -652,49 +1374,43 @@ function Reports({ user }) {
 
 /* ══════════════════ SETTINGS ══════════════════ */
 function SettingsPage({ user, profile, setProfile, showToast }) {
-  // 初期値は profile.companyName (Firestore) を優先して表示
+  const { isMobile } = useResponsive();
+
   const [inputValue, setInputValue] = useState(profile?.companyName || user.displayName || "");
   const [updating, setUpdating] = useState(false);
-  
+  const [sendingReset, setSendingReset] = useState(false);
+
   const handleUpdateAll = async () => {
     if (!inputValue.trim()) return showToast("名前を入力してください", "error");
+
     setUpdating(true);
-    
     try {
-      // 1. Firebase Auth の displayName を更新
       await updateProfile(user, { displayName: inputValue });
-      
-      // 2. Firestore の users ドキュメント (companyName) を更新
+
       const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, { 
+      await updateDoc(userRef, {
         companyName: inputValue,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       });
 
-      // 3. 過去の請求書データ (invoices) を一括更新
       const invSnap = await getDocs(collection(db, "invoices"));
       const updatePromises = [];
-      
+
       invSnap.forEach((d) => {
         if (d.data().createdBy === user.uid) {
-          updatePromises.push(updateDoc(doc(db, "invoices", d.id), { 
-            companyName: inputValue 
-          }));
+          updatePromises.push(updateDoc(doc(db, "invoices", d.id), { companyName: inputValue }));
         }
       });
-      
+
       if (updatePromises.length > 0) {
         await Promise.all(updatePromises);
       }
 
-      // 4. React の State (profile) を更新 => これでサイドバーが即座に変わる
       if (setProfile) {
         setProfile({ ...profile, companyName: inputValue });
       }
 
-      // 5. Auth 情報を最新にリロード
       await user.reload();
-      
       showToast("すべての名前情報を更新しました");
     } catch (e) {
       console.error(e);
@@ -702,28 +1418,44 @@ function SettingsPage({ user, profile, setProfile, showToast }) {
     }
     setUpdating(false);
   };
-  
+
+  const handleSendResetEmail = async () => {
+    setSendingReset(true);
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      showToast("パスワード再設定メールを送信しました");
+    } catch (e) {
+      console.error(e);
+      showToast("再設定メールの送信に失敗しました", "error");
+    }
+    setSendingReset(false);
+  };
+
   return (
     <div>
       <PageTitle sub="アカウント情報の管理">設定</PageTitle>
+
       <Card style={{ marginTop: 8 }}>
         <h3 style={{ fontSize: 16, fontWeight: 600, color: "#F1F5F9", marginBottom: 20 }}>アカウント設定</h3>
+
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div>
             <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
               ユーザー名 / 表示名
             </label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input 
-                style={inputBase} 
-                value={inputValue} 
-                onChange={e => setInputValue(e.target.value)} 
+
+            <div style={{ display: "flex", gap: 8, flexDirection: isMobile ? "column" : "row" }}>
+              <input
+                style={inputBase}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
                 placeholder="名前または会社名"
               />
-              <Btn onClick={handleUpdateAll} disabled={updating}>
+              <Btn onClick={handleUpdateAll} disabled={updating} style={isMobile ? { width: "100%" } : {}}>
                 {updating ? "更新中..." : "変更"}
               </Btn>
             </div>
+
             <p style={{ fontSize: 11, color: "#64748B", marginTop: 8 }}>
               ※ここを変更すると、請求書に表示される名前やサイドバーの名称がすべて更新されます。
             </p>
@@ -731,16 +1463,22 @@ function SettingsPage({ user, profile, setProfile, showToast }) {
 
           <hr style={{ border: "none", borderTop: "1px solid #334155" }} />
 
-          {/* パスワード再設定メール部分はそのまま */}
           <div>
             <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>セキュリティ</label>
+
             <div style={{ background: "#0F172A", padding: 16, borderRadius: 8, border: "1px solid #334155" }}>
-              <p style={{ fontSize: 13, color: "#E2E8F0", marginBottom: 12 }}>
+              <p style={{ fontSize: 13, color: "#E2E8F0", marginBottom: 12, lineHeight: 1.7 }}>
                 パスワード再設定メールを <strong>{user.email}</strong> へ送信します。
               </p>
-              <button onClick={() => {/* パスワードリセット関数 */}} style={{ /* スタイル略 */ }}>
-                再設定メールを送信
-              </button>
+
+              <Btn
+                onClick={handleSendResetEmail}
+                disabled={sendingReset}
+                variant="accent"
+                style={isMobile ? { width: "100%" } : {}}
+              >
+                {sendingReset ? "送信中..." : "再設定メールを送信"}
+              </Btn>
             </div>
           </div>
         </div>
@@ -752,13 +1490,144 @@ function SettingsPage({ user, profile, setProfile, showToast }) {
 /* ══════════════════ ACCOUNTS ══════════════════ */
 function AccountsPage({ user, showToast }) {
   const { isAdmin } = useRole();
-  const [accounts, setAccounts] = useState([]); const [newAcc, setNewAcc] = useState({ name: "", type: "expense", group: "販管費" });
-  useEffect(() => { (async () => { const s = await getDoc(doc(db, "settings", "accounts")); if (s.exists()) setAccounts(s.data().list || []); })(); }, []);
-  const save = async (list) => { await setDoc(doc(db, "settings", "accounts"), { list }); setAccounts(list); };
-  const add = async () => { if (!isAdmin) return showToast("管理者のみ追加できます", "error"); if (!newAcc.name) return showToast("科目名を入力してください", "error"); await save([...accounts, { ...newAcc, id: uid() }]); setNewAcc({ name: "", type: "expense", group: "販管費" }); showToast("追加しました！"); };
-  const remove = async (id) => { if (!isAdmin) return showToast("管理者のみ削除できます", "error"); await save(accounts.filter(a => a.id !== id)); showToast("削除しました"); };
-  const Section = ({ title, items, color }) => <div style={{ marginBottom: 24 }}><h3 style={{ fontSize: 14, fontWeight: 600, color, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />{title}</h3><div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{items.map(a => <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", background: "#0F172A", borderRadius: 6 }}><div><span style={{ fontSize: 14, color: "#E2E8F0" }}>{a.name}</span><span style={{ fontSize: 11, color: "#64748B", marginLeft: 8 }}>{a.group}</span></div>{isAdmin && <button onClick={() => remove(a.id)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13 }}>✕</button>}</div>)}</div></div>;
-  return (<div><PageTitle sub="勘定科目の一覧">勘定科目</PageTitle><Card style={{ marginBottom: 20 }}><Section title="収入科目" items={accounts.filter(a => a.type === "income")} color="#10B981" /><Section title="経費科目" items={accounts.filter(a => a.type === "expense")} color="#F59E0B" /></Card>
-    {isAdmin && <Card><h3 style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9", marginBottom: 12 }}>科目を追加</h3><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><input style={{ ...inputBase, flex: 2, minWidth: 140 }} placeholder="科目名" value={newAcc.name} onChange={e => setNewAcc({ ...newAcc, name: e.target.value })} /><select style={{ ...inputBase, flex: 1, minWidth: 100, cursor: "pointer" }} value={newAcc.type} onChange={e => setNewAcc({ ...newAcc, type: e.target.value })}><option value="income">収入</option><option value="expense">経費</option></select><input style={{ ...inputBase, flex: 1, minWidth: 100 }} placeholder="分類" value={newAcc.group} onChange={e => setNewAcc({ ...newAcc, group: e.target.value })} /><Btn onClick={add}>追加</Btn></div></Card>}
-  </div>);
+  const { isMobile } = useResponsive();
+
+  const [accounts, setAccounts] = useState([]);
+  const [newAcc, setNewAcc] = useState({ name: "", type: "expense", group: "販管費" });
+
+  useEffect(() => {
+    (async () => {
+      const s = await getDoc(doc(db, "settings", "accounts"));
+      if (s.exists()) setAccounts(s.data().list || []);
+    })();
+  }, []);
+
+  const save = async (list) => {
+    await setDoc(doc(db, "settings", "accounts"), { list });
+    setAccounts(list);
+  };
+
+  const add = async () => {
+    if (!isAdmin) return showToast("管理者のみ追加できます", "error");
+    if (!newAcc.name) return showToast("科目名を入力してください", "error");
+
+    await save([...accounts, { ...newAcc, id: uid() }]);
+    setNewAcc({ name: "", type: "expense", group: "販管費" });
+    showToast("追加しました！");
+  };
+
+  const remove = async (id) => {
+    if (!isAdmin) return showToast("管理者のみ削除できます", "error");
+    await save(accounts.filter((a) => a.id !== id));
+    showToast("削除しました");
+  };
+
+  const Section = ({ title, items, color }) => (
+    <div style={{ marginBottom: 24 }}>
+      <h3
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color,
+          marginBottom: 10,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
+        {title}
+      </h3>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {items.map((a) => (
+          <div
+            key={a.id}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "8px 14px",
+              background: "#0F172A",
+              borderRadius: 6,
+              gap: 8,
+            }}
+          >
+            <div>
+              <span style={{ fontSize: 14, color: "#E2E8F0" }}>{a.name}</span>
+              <span style={{ fontSize: 11, color: "#64748B", marginLeft: 8 }}>{a.group}</span>
+            </div>
+
+            {isAdmin && (
+              <button
+                onClick={() => remove(a.id)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#64748B",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <PageTitle sub="勘定科目の一覧">勘定科目</PageTitle>
+
+      <Card style={{ marginBottom: 20 }}>
+        <Section title="収入科目" items={accounts.filter((a) => a.type === "income")} color="#10B981" />
+        <Section title="経費科目" items={accounts.filter((a) => a.type === "expense")} color="#F59E0B" />
+      </Card>
+
+      {isAdmin && (
+        <Card>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9", marginBottom: 12 }}>科目を追加</h3>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              flexDirection: isMobile ? "column" : "row",
+            }}
+          >
+            <input
+              style={{ ...inputBase, flex: 2, minWidth: 140 }}
+              placeholder="科目名"
+              value={newAcc.name}
+              onChange={(e) => setNewAcc({ ...newAcc, name: e.target.value })}
+            />
+
+            <select
+              style={{ ...inputBase, flex: 1, minWidth: 100, cursor: "pointer" }}
+              value={newAcc.type}
+              onChange={(e) => setNewAcc({ ...newAcc, type: e.target.value })}
+            >
+              <option value="income">収入</option>
+              <option value="expense">経費</option>
+            </select>
+
+            <input
+              style={{ ...inputBase, flex: 1, minWidth: 100 }}
+              placeholder="分類"
+              value={newAcc.group}
+              onChange={(e) => setNewAcc({ ...newAcc, group: e.target.value })}
+            />
+
+            <Btn onClick={add} style={isMobile ? { width: "100%" } : {}}>
+              追加
+            </Btn>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
 }
