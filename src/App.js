@@ -1306,7 +1306,7 @@ function InvoicesPage({ user, profile, showToast }) {
                   <input
                     style={{ ...inputBase, flex: 1.5 }}
                     type="number"
-                    placeholder="単価"
+                    placeholder="金額"
                     value={item.price || ""}
                     onChange={(e) => {
                       const newItems = [...form.items];
