@@ -57,6 +57,54 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => { const r = new 
 const gasUpload = async (file) => { const b = await fileToBase64(file); const res = await fetch(GAS_API_URL, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ action: "upload", fileName: file.name, mimeType: file.type, fileData: b }) }); const data = await res.json(); if (!data.success) throw new Error(data.error || "アップロード失敗"); return data; };
 const gasDelete = async (fileId) => { await fetch(GAS_API_URL, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ action: "delete", fileId }) }); };
 
+/* ── Pie chart (SVG) ── */
+const PIE_COLORS = ["#10B981","#3B82F6","#F59E0B","#8B5CF6","#EC4899","#06B6D4","#EF4444","#84CC16","#F97316","#6366F1"];
+function PieChart({ data, title }) {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0) return (
+    <div style={{ textAlign: "center", padding: 20 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#94A3B8", marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 12, color: "#475569" }}>今月はありません</div>
+    </div>
+  );
+  let cum = 0;
+  const slices = data.map((d, i) => {
+    const pct = d.value / total;
+    const startAngle = cum * 2 * Math.PI;
+    cum += pct;
+    const endAngle = cum * 2 * Math.PI;
+    const x1 = 50 + 40 * Math.cos(startAngle);
+    const y1 = 50 + 40 * Math.sin(startAngle);
+    const x2 = 50 + 40 * Math.cos(endAngle);
+    const y2 = 50 + 40 * Math.sin(endAngle);
+    const large = pct > 0.5 ? 1 : 0;
+    const path = pct >= 0.999
+      ? `M50,10 A40,40 0 1,1 49.99,10 Z`
+      : `M50,50 L${x1},${y1} A40,40 0 ${large},1 ${x2},${y2} Z`;
+    return { ...d, path, color: PIE_COLORS[i % PIE_COLORS.length], pct };
+  });
+  return (
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#94A3B8", marginBottom: 8, textAlign: "center" }}>{title}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
+        <svg viewBox="0 0 100 100" width="120" height="120">
+          {slices.map((s, i) => <path key={i} d={s.path} fill={s.color} stroke="#1E293B" strokeWidth="0.5" />)}
+        </svg>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          {slices.map((s, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#94A3B8" }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+              <span style={{ minWidth: 60 }}>{s.name}</span>
+              <span style={{ fontFamily: "'Space Mono',monospace", color: "#E2E8F0" }}>{fmtYen(s.value)}</span>
+              <span style={{ color: "#64748B" }}>({Math.round(s.pct * 100)}%)</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const DEFAULT_ACCOUNTS = [
   { id: "sales", name: "売上高", type: "income", group: "売上" },{ id: "service_income", name: "サービス収入", type: "income", group: "売上" },{ id: "other_income", name: "雑収入", type: "income", group: "売上" },
   { id: "purchases", name: "仕入高", type: "expense", group: "売上原価" },{ id: "salary", name: "給与手当", type: "expense", group: "販管費" },{ id: "rent", name: "地代家賃", type: "expense", group: "販管費" },{ id: "utilities", name: "水道光熱費", type: "expense", group: "販管費" },{ id: "communication", name: "通信費", type: "expense", group: "販管費" },{ id: "transport", name: "旅費交通費", type: "expense", group: "販管費" },{ id: "supplies", name: "消耗品費", type: "expense", group: "販管費" },{ id: "entertainment", name: "接待交際費", type: "expense", group: "販管費" },{ id: "advertising", name: "広告宣伝費", type: "expense", group: "販管費" },{ id: "insurance", name: "保険料", type: "expense", group: "販管費" },{ id: "depreciation", name: "減価償却費", type: "expense", group: "販管費" },{ id: "tax", name: "租税公課", type: "expense", group: "販管費" },{ id: "misc_expense", name: "雑費", type: "expense", group: "販管費" },
@@ -1060,6 +1108,24 @@ function Ledger({ user, showToast }) {
         <Card style={{ padding: 16 }}><div style={{ fontSize: 11, color: "#94A3B8" }}>差引</div><div style={{ fontSize: 20, fontWeight: 700, color: tInc - tExp >= 0 ? "#3B82F6" : "#EF4444", fontFamily: "'Space Mono',monospace" }}>{fmtYen(tInc - tExp)}</div></Card>
       </div>
 
+      {/* 科目別 円グラフ */}
+      {!loading && (() => {
+        const incByAcc = {}; const expByAcc = {};
+        filtered.forEach(e => {
+          const name = e.accountName || e.account || "未分類";
+          if (e.type === "income") incByAcc[name] = (incByAcc[name] || 0) + (e.amount || 0);
+          else if (e.type === "expense") expByAcc[name] = (expByAcc[name] || 0) + (e.amount || 0);
+        });
+        const incData = Object.entries(incByAcc).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+        const expData = Object.entries(expByAcc).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 20 }}>
+            <Card style={{ padding: 20 }}><PieChart data={incData} title="収入の内訳" /></Card>
+            <Card style={{ padding: 20 }}><PieChart data={expData} title="支出の内訳" /></Card>
+          </div>
+        );
+      })()}
+
       {loading ? (
         <p style={{ color: "#64748B" }}>読み込み中...</p>
       ) : filtered.length === 0 ? (
@@ -1403,6 +1469,42 @@ function InvoicesPage({ user, profile, showToast }) {
           </div>
         </Card>
       )}
+
+      {/* 精算待ち — 人ごとのまとめ */}
+      {!loading && (() => {
+        const pending = invoices.filter(inv => inv.status === "sent");
+        if (pending.length === 0) return null;
+        const byPerson = {};
+        pending.forEach(inv => {
+          const name = inv.companyName || "不明";
+          if (!byPerson[name]) byPerson[name] = { items: [], total: 0 };
+          byPerson[name].items.push(inv);
+          byPerson[name].total += inv.total || 0;
+        });
+        return (
+          <Card style={{ marginBottom: 24, borderLeft: "3px solid #F59E0B", background: "rgba(245,158,11,.04)" }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: "#F59E0B", marginBottom: 12 }}>精算待ち（{pending.length}件）</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {Object.entries(byPerson).map(([name, data]) => (
+                <div key={name} style={{ padding: 12, background: "#0F172A", borderRadius: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9" }}>{name}</span>
+                    <span style={{ fontSize: 16, fontWeight: 700, color: "#F59E0B", fontFamily: "'Space Mono',monospace" }}>{fmtYen(data.total)}</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {data.items.map(inv => (
+                      <div key={inv.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94A3B8" }}>
+                        <span>{inv.client} {inv.dueDate && `(${inv.dueDate})`}</span>
+                        <span style={{ fontFamily: "'Space Mono',monospace" }}>{fmtYen(inv.total)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        );
+      })()}
 
       {(() => {
         if (loading) return <p style={{ textAlign: "center", color: "#64748B" }}>読み込み中...</p>;
