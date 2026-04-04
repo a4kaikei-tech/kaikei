@@ -1431,7 +1431,14 @@ function InvoicesPage({ user, profile, showToast }) {
                         {inv.dueDate && <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>{inv.dueDate}</div>}
                         {inv.account && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>科目: {inv.account}</div>}
                         {inv.settledAt && <div style={{ fontSize: 11, color: "#10B981", marginTop: 2 }}>精算日: {fmtDate(inv.settledAt)}</div>}
-                        {inv.receiptUrl && <a href={inv.receiptUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#60A5FA", textDecoration: "none", display: "block", marginTop: 4 }}>領収書を表示 ↗</a>}
+                        {inv.receiptUrl && (() => {
+                          const created = inv.createdAt ? toDate(inv.createdAt) : null;
+                          const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+                          const expired = created && created < oneYearAgo;
+                          return expired
+                            ? <span style={{ fontSize: 11, color: "#64748B", display: "block", marginTop: 4 }}>※ 1年以上前の領収書は参照できません</span>
+                            : <a href={inv.receiptUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#60A5FA", textDecoration: "none", display: "block", marginTop: 4 }}>領収書を表示 ↗</a>;
+                        })()}
                       </div>
                       <div style={{ textAlign: isMobile ? "left" : "right", width: isMobile ? "100%" : "auto" }}>
                         <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "monospace", color: "#F1F5F9" }}>{fmtYen(inv.total)}</div>
