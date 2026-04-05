@@ -803,6 +803,7 @@ function Dashboard({ user, profile, setPage }) {
       iS.forEach((d) => iA.push({ id: d.id, ...d.data() }));
       setInvoices(iA);
 
+      // 会計年度名を取得
       const fySnap = await getDoc(doc(db, "settings", "general"));
       if (fySnap.exists() && fySnap.data().fiscalYearName) {
         setFiscalYearName(fySnap.data().fiscalYearName);
@@ -857,7 +858,7 @@ function Dashboard({ user, profile, setPage }) {
 
       {fiscalYearName && (
         <Card style={{ padding: "14px 20px", marginBottom: 20, background: "rgba(16,185,129,.06)", borderLeft: "3px solid #10B981" }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9" }}>現在の会計担当: <span style={{ color: "#34D399" }}>{fiscalYearName}</span></div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9" }}>現在の会計: <span style={{ color: "#34D399" }}>{fiscalYearName}</span></div>
         </Card>
       )}
 
@@ -1592,10 +1593,10 @@ function InvoicesPage({ user, profile, showToast }) {
         </Card>
       )}
 
-      {/* 精算待ち — 人ごとのまとめ */}
-      {!loading && (() => {
+      {/* 精算待ち — 年度にかかわらず常に表示 */}
+      {(() => {
         const pending = invoices.filter(inv => inv.status === "sent");
-        if (pending.length === 0) return null;
+        if (loading || pending.length === 0) return null;
         const byPerson = {};
         pending.forEach(inv => {
           const name = inv.companyName || "不明";
@@ -1632,19 +1633,21 @@ function InvoicesPage({ user, profile, showToast }) {
         if (loading) return <p style={{ textAlign: "center", color: "#64748B" }}>読み込み中...</p>;
         if (invoices.length === 0) return <Card><p style={{ color: "#475569", textAlign: "center", padding: 24, fontSize: 14 }}>申請書はありません</p></Card>;
 
-        const months = {};
+        const years = {};
         invoices.forEach(inv => {
-          const mk = inv.dueDate ? inv.dueDate.slice(0, 7) : (inv.createdAt ? toDate(inv.createdAt).toISOString().slice(0, 7) : "不明");
-          if (!months[mk]) months[mk] = [];
-          months[mk].push(inv);
+          const yk = inv.dueDate ? inv.dueDate.slice(0, 4) : (inv.createdAt ? toDate(inv.createdAt).getFullYear().toString() : "不明");
+          if (!years[yk]) years[yk] = [];
+          years[yk].push(inv);
         });
-        const sortedMonths = Object.keys(months).sort((a, b) => b.localeCompare(a));
+        // 各年内も新しい順にソート
+        Object.values(years).forEach(arr => arr.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+        const sortedYears = Object.keys(years).sort((a, b) => b.localeCompare(a));
 
-        return sortedMonths.map(mk => (
-          <div key={mk} style={{ marginBottom: 24 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: "#94A3B8", marginBottom: 10, paddingLeft: 4 }}>{mk === "不明" ? "日付なし" : `${mk.split("-")[0]}年${parseInt(mk.split("-")[1])}月`}</h3>
+        return sortedYears.map(yk => (
+          <div key={yk} style={{ marginBottom: 24 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: "#94A3B8", marginBottom: 10, paddingLeft: 4 }}>{yk === "不明" ? "日付なし" : `${yk}年`}</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {months[mk].map(inv => {
+              {years[yk].map(inv => {
                 const st = INVOICE_STATUS[inv.status] || INVOICE_STATUS.draft;
                 return (
                   <Card key={inv.id} style={{ padding: 16, borderLeft: `3px solid ${st.cardBorder}`, background: st.cardBg }}>
@@ -1813,24 +1816,24 @@ function SettingsPage({ user, profile, setProfile, showToast }) {
 
       {isAdmin && (
         <Card style={{ marginBottom: 16 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#F1F5F9", marginBottom: 16 }}>会計者名の設定</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#F1F5F9", marginBottom: 16 }}>会計年度の設定</h3>
           <div>
             <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
-              現在の会計担当（ダッシュボードに表示されます）
+              現在の会計名（ダッシュボードに表示されます）
             </label>
             <div style={{ display: "flex", gap: 8, flexDirection: isMobile ? "column" : "row" }}>
               <input
                 style={inputBase}
                 value={fiscalYearName}
                 onChange={(e) => setFiscalYearName(e.target.value)}
-                placeholder="例: A412熊野たろう"
+                placeholder="例: 2025年度 第1期"
               />
               <Btn onClick={handleFiscalYearUpdate} disabled={fyUpdating} style={isMobile ? { width: "100%" } : {}}>
                 {fyUpdating ? "更新中..." : "保存"}
               </Btn>
             </div>
             <p style={{ fontSize: 11, color: "#64748B", marginTop: 8 }}>
-              ※ この名前は全ユーザーのダッシュボードに「現在の会計担当: ○○」と表示されます。管理者のみ変更可能です。
+              ※ この名前は全ユーザーのダッシュボードに「現在の会計: ○○」と表示されます。管理者のみ変更可能です。
             </p>
           </div>
         </Card>
@@ -1897,7 +1900,7 @@ function CollectionPage() {
 
   return (
     <div>
-      <PageTitle right={
+      <PageTitle sub="A4○○の収入を摘要別に集計" right={
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button onClick={() => setFilterYear(filterYear - 1)} style={{ background: "none", border: "1px solid #334155", color: "#94A3B8", borderRadius: 4, padding: "4px 8px", cursor: "pointer" }}>◀</button>
           <span style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9", minWidth: 50, textAlign: "center" }}>{filterYear}年</span>
