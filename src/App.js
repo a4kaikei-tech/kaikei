@@ -803,7 +803,7 @@ function Dashboard({ user, profile, setPage }) {
       iS.forEach((d) => iA.push({ id: d.id, ...d.data() }));
       setInvoices(iA);
 
-      // 会計年度名を取得
+      // 会計担当者を取得
       const fySnap = await getDoc(doc(db, "settings", "general"));
       if (fySnap.exists() && fySnap.data().fiscalYearName) {
         setFiscalYearName(fySnap.data().fiscalYearName);
@@ -858,7 +858,7 @@ function Dashboard({ user, profile, setPage }) {
 
       {fiscalYearName && (
         <Card style={{ padding: "14px 20px", marginBottom: 20, background: "rgba(16,185,129,.06)", borderLeft: "3px solid #10B981" }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9" }}>現在の会計: <span style={{ color: "#34D399" }}>{fiscalYearName}</span></div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9" }}>現在の会計担当: <span style={{ color: "#34D399" }}>{fiscalYearName}</span></div>
         </Card>
       )}
 
@@ -1801,11 +1801,11 @@ function SettingsPage({ user, profile, setProfile, showToast }) {
   };
 
   const handleFiscalYearUpdate = async () => {
-    if (!fiscalYearName.trim()) return showToast("会計名を入力してください", "error");
+    if (!fiscalYearName.trim()) return showToast("会計担当者を入力してください", "error");
     setFyUpdating(true);
     try {
       await setDoc(doc(db, "settings", "general"), { fiscalYearName }, { merge: true });
-      showToast("会計名を更新しました");
+      showToast("会計担当者を更新しました");
     } catch (e) { console.error(e); showToast("更新に失敗しました", "error"); }
     setFyUpdating(false);
   };
@@ -1816,24 +1816,24 @@ function SettingsPage({ user, profile, setProfile, showToast }) {
 
       {isAdmin && (
         <Card style={{ marginBottom: 16 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#F1F5F9", marginBottom: 16 }}>会計年度の設定</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#F1F5F9", marginBottom: 16 }}>会計担当者の設定</h3>
           <div>
             <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
-              現在の会計名（ダッシュボードに表示されます）
+              現在の会計担当者（ダッシュボードに表示されます）
             </label>
             <div style={{ display: "flex", gap: 8, flexDirection: isMobile ? "column" : "row" }}>
               <input
                 style={inputBase}
                 value={fiscalYearName}
                 onChange={(e) => setFiscalYearName(e.target.value)}
-                placeholder="例: 2025年度 第1期"
+                placeholder="例: A401熊野たろう"
               />
               <Btn onClick={handleFiscalYearUpdate} disabled={fyUpdating} style={isMobile ? { width: "100%" } : {}}>
                 {fyUpdating ? "更新中..." : "保存"}
               </Btn>
             </div>
             <p style={{ fontSize: 11, color: "#64748B", marginTop: 8 }}>
-              ※ この名前は全ユーザーのダッシュボードに「現在の会計: ○○」と表示されます。管理者のみ変更可能です。
+              ※ この名前は全ユーザーのダッシュボードに「現在の会計担当: ○○」と表示されます。管理者のみ変更可能です。
             </p>
           </div>
         </Card>
