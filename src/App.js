@@ -3,8 +3,7 @@ import { auth, db, GAS_API_URL } from "./firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
@@ -12,7 +11,6 @@ import {
   updateProfile,
   setPersistence,
   browserSessionPersistence,
-  browserLocalPersistence,
 } from "firebase/auth";
 import {
   doc,
@@ -193,33 +191,17 @@ export default function App() {
   const [page, setPage] = useState("login"); const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
-  // 認証フロー:
-  // - Googleリダイレクト中はlocalPersistenceが必要（ページ遷移で消えないように）
-  // - ログイン完了後にsessionPersistenceに切り替え（タブ閉じたら消える）
   useEffect(() => {
     let unsub;
     (async () => {
-      // まずリダイレクト結果を確認（Googleログイン後の復帰）
-      try {
-        const redirectResult = await getRedirectResult(auth);
-        if (redirectResult?.user) {
-          // リダイレクトからの復帰成功 → セッション限定に切り替え
-          await setPersistence(auth, browserSessionPersistence);
-        }
-      } catch (e) {
-        console.error("Redirect error:", e);
-      }
-
+      await setPersistence(auth, browserSessionPersistence);
       unsub = onAuthStateChanged(auth, async (u) => {
         if (u) {
           setUser(u);
-          // ログイン済みならセッション限定に切り替え
-          try { await setPersistence(auth, browserSessionPersistence); } catch {}
           const snap = await getDoc(doc(db, "users", u.uid));
           if (snap.exists()) {
             setProfile(snap.data()); setPage("dashboard");
           } else {
-            // Google初回ログインなどでプロフィールがない場合は自動作成
             const newProfile = {
               uid: u.uid,
               email: u.email,
@@ -354,10 +336,17 @@ function AuthPage({ page, setPage, showToast }) {
   };
 
   const handleGoogleLogin = async () => {
-    // リダイレクト中はページ遷移するのでlocalPersistenceが必要
-    await setPersistence(auth, browserLocalPersistence);
-    const provider = new GoogleAuthProvider();
-    signInWithRedirect(auth, provider);
+    setBusy(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (e) {
+      if (e.code !== "auth/popup-closed-by-user") {
+        console.error(e);
+        showToast("Googleログインに失敗しました", "error");
+      }
+    }
+    setBusy(false);
   };
 
   const title =
