@@ -398,7 +398,7 @@ function AuthPage({ page, setPage, showToast }) {
                 <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 6, display: "block" }}>名前</label>
                 <input
                   style={inputBase}
-                  placeholder="A4熊野たろう"
+                  placeholder="株式会社サンプル"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                 />
@@ -752,6 +752,21 @@ function MainLayout({ profile, user, page, setPage, logout, showToast, setProfil
       >
         <div style={{ maxWidth: 960, margin: "0 auto", animation: "fadeIn .3s ease" }}>
           {!isAdmin && page !== "invoices" && <ReadOnlyBanner />}
+          {isAdmin && (() => {
+            const now = new Date();
+            if (now.getMonth() === 2 && now.getDate() >= 20) {
+              return (
+                <div style={{ background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.3)", borderRadius: 8, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <span style={{ fontSize: 20, lineHeight: 1 }}>⚠️</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#F59E0B", marginBottom: 4 }}>年度末のお知らせ</div>
+                    <div style={{ fontSize: 12, color: "#94A3B8", lineHeight: 1.6 }}>3月末が近づいています。帳簿の金額と実際の残高が一致しているか確認してください。未精算の申請書がないかもあわせてご確認ください。</div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {page === "dashboard" && <Dashboard user={user} profile={profile} setPage={setPage} />}
           {page === "journal" && isAdmin && <JournalEntry user={user} showToast={showToast} setPage={setPage} />}
