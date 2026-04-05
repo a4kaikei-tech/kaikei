@@ -12,6 +12,7 @@ import {
   updateProfile,
   setPersistence,
   browserSessionPersistence,
+  browserLocalPersistence,
 } from "firebase/auth";
 import {
   doc,
@@ -192,19 +193,28 @@ export default function App() {
   const [page, setPage] = useState("login"); const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
-  // セッション限定: タブを閉じたらログアウト、端末にデータを残さない
+  // 認証フロー:
+  // - Googleリダイレクト中はlocalPersistenceが必要（ページ遷移で消えないように）
+  // - ログイン完了後にsessionPersistenceに切り替え（タブ閉じたら消える）
   useEffect(() => {
-    setPersistence(auth, browserSessionPersistence).then(() => {
-      // Googleリダイレクト後のエラーをキャッチ
-      getRedirectResult(auth).catch((e) => {
-        if (e.code && e.code !== "auth/redirect-cancelled-by-user") {
-          console.error("Redirect error:", e);
+    let unsub;
+    (async () => {
+      // まずリダイレクト結果を確認（Googleログイン後の復帰）
+      try {
+        const redirectResult = await getRedirectResult(auth);
+        if (redirectResult?.user) {
+          // リダイレクトからの復帰成功 → セッション限定に切り替え
+          await setPersistence(auth, browserSessionPersistence);
         }
-      });
+      } catch (e) {
+        console.error("Redirect error:", e);
+      }
 
-      const unsub = onAuthStateChanged(auth, async (u) => {
+      unsub = onAuthStateChanged(auth, async (u) => {
         if (u) {
           setUser(u);
+          // ログイン済みならセッション限定に切り替え
+          try { await setPersistence(auth, browserSessionPersistence); } catch {}
           const snap = await getDoc(doc(db, "users", u.uid));
           if (snap.exists()) {
             setProfile(snap.data()); setPage("dashboard");
@@ -229,8 +239,8 @@ export default function App() {
         }
         setLoading(false);
       });
-      return unsub;
-    });
+    })();
+    return () => { if (unsub) unsub(); };
   }, []);
 
   const handleLogout = async () => {
@@ -343,7 +353,9 @@ function AuthPage({ page, setPage, showToast }) {
     setBusy(false);
   };
 
-  const handleGoogleLogin = () => {
+  const handleGoogleLogin = async () => {
+    // リダイレクト中はページ遷移するのでlocalPersistenceが必要
+    await setPersistence(auth, browserLocalPersistence);
     const provider = new GoogleAuthProvider();
     signInWithRedirect(auth, provider);
   };
