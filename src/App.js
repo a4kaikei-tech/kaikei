@@ -3,7 +3,8 @@ import { auth, db, GAS_API_URL } from "./firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
@@ -194,6 +195,13 @@ export default function App() {
   // セッション限定: タブを閉じたらログアウト、端末にデータを残さない
   useEffect(() => {
     setPersistence(auth, browserSessionPersistence).then(() => {
+      // Googleリダイレクト後のエラーをキャッチ
+      getRedirectResult(auth).catch((e) => {
+        if (e.code && e.code !== "auth/redirect-cancelled-by-user") {
+          console.error("Redirect error:", e);
+        }
+      });
+
       const unsub = onAuthStateChanged(auth, async (u) => {
         if (u) {
           setUser(u);
@@ -335,34 +343,9 @@ function AuthPage({ page, setPage, showToast }) {
     setBusy(false);
   };
 
-  const handleGoogleLogin = async () => {
-    setBusy(true);
-    try {
-      const provider = new GoogleAuthProvider();
-      const cred = await signInWithPopup(auth, provider);
-      // Check if user profile exists in Firestore, create if first login
-      const snap = await getDoc(doc(db, "users", cred.user.uid));
-      if (!snap.exists()) {
-        await setDoc(doc(db, "users", cred.user.uid), {
-          uid: cred.user.uid,
-          email: cred.user.email,
-          companyName: cred.user.displayName || cred.user.email,
-          role: "member",
-          createdAt: serverTimestamp(),
-          fiscalYearStart: 4,
-        });
-        const accSnap = await getDoc(doc(db, "settings", "accounts"));
-        if (!accSnap.exists()) {
-          await setDoc(doc(db, "settings", "accounts"), { list: DEFAULT_ACCOUNTS });
-        }
-      }
-    } catch (e) {
-      console.error(e);
-      if (e.code !== "auth/popup-closed-by-user") {
-        showToast("Googleログインに失敗しました", "error");
-      }
-    }
-    setBusy(false);
+  const handleGoogleLogin = () => {
+    const provider = new GoogleAuthProvider();
+    signInWithRedirect(auth, provider);
   };
 
   const title =
