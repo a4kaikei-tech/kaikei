@@ -803,7 +803,6 @@ function Dashboard({ user, profile, setPage }) {
       iS.forEach((d) => iA.push({ id: d.id, ...d.data() }));
       setInvoices(iA);
 
-      // 会計年度名を取得
       const fySnap = await getDoc(doc(db, "settings", "general"));
       if (fySnap.exists() && fySnap.data().fiscalYearName) {
         setFiscalYearName(fySnap.data().fiscalYearName);
@@ -858,7 +857,7 @@ function Dashboard({ user, profile, setPage }) {
 
       {fiscalYearName && (
         <Card style={{ padding: "14px 20px", marginBottom: 20, background: "rgba(16,185,129,.06)", borderLeft: "3px solid #10B981" }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9" }}>現在の会計: <span style={{ color: "#34D399" }}>{fiscalYearName}</span></div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9" }}>現在の会計担当: <span style={{ color: "#34D399" }}>{fiscalYearName}</span></div>
         </Card>
       )}
 
@@ -967,11 +966,11 @@ function Dashboard({ user, profile, setPage }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)",
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(2,1fr)",
             gap: 14,
           }}
         >
-          {[["journal", "📒", "仕訳を入力"], ["invoices", "📄", "請求書を作成"], ["receipts", "🧾", "領収書を保存"]].map(
+          {[["journal", "📒", "仕訳を入力"], ["invoices", "📄", "請求書を作成"]].map(
             ([id, ic, lb]) => (
               <Card key={id} style={{ cursor: "pointer" }} onClick={() => setPage(id)}>
                 <div style={{ textAlign: "center", padding: "8px 0" }}>
@@ -1814,24 +1813,24 @@ function SettingsPage({ user, profile, setProfile, showToast }) {
 
       {isAdmin && (
         <Card style={{ marginBottom: 16 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#F1F5F9", marginBottom: 16 }}>会計年度の設定</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#F1F5F9", marginBottom: 16 }}>会計者名の設定</h3>
           <div>
             <label style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8, display: "block" }}>
-              現在の会計名（ダッシュボードに表示されます）
+              現在の会計担当（ダッシュボードに表示されます）
             </label>
             <div style={{ display: "flex", gap: 8, flexDirection: isMobile ? "column" : "row" }}>
               <input
                 style={inputBase}
                 value={fiscalYearName}
                 onChange={(e) => setFiscalYearName(e.target.value)}
-                placeholder="例: 2025年度 第1期"
+                placeholder="例: A412熊野たろう"
               />
               <Btn onClick={handleFiscalYearUpdate} disabled={fyUpdating} style={isMobile ? { width: "100%" } : {}}>
                 {fyUpdating ? "更新中..." : "保存"}
               </Btn>
             </div>
             <p style={{ fontSize: 11, color: "#64748B", marginTop: 8 }}>
-              ※ この名前は全ユーザーのダッシュボードに「現在の会計: ○○」と表示されます。管理者のみ変更可能です。
+              ※ この名前は全ユーザーのダッシュボードに「現在の会計担当: ○○」と表示されます。管理者のみ変更可能です。
             </p>
           </div>
         </Card>
@@ -1866,6 +1865,7 @@ function SettingsPage({ user, profile, setProfile, showToast }) {
 function CollectionPage() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const { isMobile } = useResponsive();
 
   useEffect(() => {
@@ -1878,9 +1878,9 @@ function CollectionPage() {
     })();
   }, []);
 
-  // 収入のうち摘要が「A4」で始まるもの → 摘要順にグループ化
+  // 年でフィルタ → 収入のうち摘要が「A4」で始まるもの → 摘要順にグループ化
   const a4Entries = entries
-    .filter((e) => e.type === "income" && (e.description || e.note || "").startsWith("A4"))
+    .filter((e) => e.type === "income" && e.date && e.date.startsWith(String(filterYear)) && (e.description || e.note || "").startsWith("A4"))
     .sort((a, b) => (a.description || a.note || "").localeCompare(b.description || b.note || ""));
 
   const byName = {};
@@ -1897,17 +1897,23 @@ function CollectionPage() {
 
   return (
     <div>
-      <PageTitle sub="A4○○の収入を摘要別に集計">集金</PageTitle>
+      <PageTitle right={
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={() => setFilterYear(filterYear - 1)} style={{ background: "none", border: "1px solid #334155", color: "#94A3B8", borderRadius: 4, padding: "4px 8px", cursor: "pointer" }}>◀</button>
+          <span style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9", minWidth: 50, textAlign: "center" }}>{filterYear}年</span>
+          <button onClick={() => setFilterYear(filterYear + 1)} style={{ background: "none", border: "1px solid #334155", color: "#94A3B8", borderRadius: 4, padding: "4px 8px", cursor: "pointer" }}>▶</button>
+        </div>
+      }>集金</PageTitle>
 
       <Card style={{ padding: "14px 20px", marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 13, color: "#94A3B8" }}>対象件数: {a4Entries.length}件</span>
+          <span style={{ fontSize: 13, color: "#94A3B8" }}>{filterYear}年 — 対象: {a4Entries.length}件</span>
           <span style={{ fontSize: 18, fontWeight: 700, color: "#10B981", fontFamily: "'Space Mono',monospace" }}>{fmtYen(grandTotal)}</span>
         </div>
       </Card>
 
       {Object.keys(byName).length === 0 ? (
-        <Card><p style={{ color: "#475569", textAlign: "center", padding: 24, fontSize: 14 }}>A4で始まる収入データはありません</p></Card>
+        <Card><p style={{ color: "#475569", textAlign: "center", padding: 24, fontSize: 14 }}>{filterYear}年のA4で始まる収入データはありません</p></Card>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {Object.entries(byName).map(([name, data]) => (
