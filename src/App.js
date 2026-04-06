@@ -1727,7 +1727,7 @@ function InvoicesPage({ user, profile, showToast }) {
                               const entryId = uid();
                               await setDoc(doc(db, "entries", entryId), {
                                 date: today, type: "expense", accountName: acct,
-                                amount: inv.total, tax: inv.tax, description: `自動: ${inv.client}`,
+                                amount: inv.total, tax: inv.tax, description: (inv.items || []).map(i => i.name).filter(Boolean).join(", ") || inv.client,
                                 companyName: inv.companyName, createdBy: user.uid, createdAt: serverTimestamp(),
                                 fromInvoiceId: inv.id, receiptUrl: inv.receiptUrl || "",
                               });
