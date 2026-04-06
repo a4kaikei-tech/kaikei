@@ -1182,7 +1182,7 @@ function Ledger({ user, showToast }) {
     const s = await getDocs(collection(db, "entries"));
     const a = [];
     s.forEach((d) => a.push({ id: d.id, ...d.data() }));
-    setEntries(a.sort((a, b) => (b.date || "").localeCompare(a.date || "")));
+    setEntries(a.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
     setLoading(false);
   }, []);
 
