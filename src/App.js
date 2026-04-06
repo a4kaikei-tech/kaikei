@@ -1656,7 +1656,37 @@ function InvoicesPage({ user, profile, showToast }) {
                         <div style={{ fontWeight: 700, color: "#F1F5F9" }}>{inv.companyName} <StatusBadge status={inv.status} /></div>
                         <div style={{ fontSize: 13, color: "#34D399" }}>{inv.client}</div>
                         {inv.dueDate && <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>{inv.dueDate}</div>}
-                        {inv.account && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>科目: {inv.account}</div>}
+                        {inv.account && isAdmin && inv.status === "paid" ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                            <span style={{ fontSize: 11, color: "#94A3B8" }}>科目:</span>
+                            <select
+                              value={inv.account}
+                              onChange={async (e) => {
+                                const newAcct = e.target.value;
+                                if (!newAcct || newAcct === inv.account) return;
+                                try {
+                                  // 請求書の科目を更新
+                                  await updateDoc(doc(db, "invoices", inv.id), { account: newAcct });
+                                  // 紐づく仕訳の科目も同時に更新
+                                  if (inv.linkedEntryId) {
+                                    await updateDoc(doc(db, "entries", inv.linkedEntryId), { accountName: newAcct });
+                                  }
+                                  const linked = await getDocs(query(collection(db, "entries"), where("fromInvoiceId", "==", inv.id)));
+                                  for (const d of linked.docs) {
+                                    await updateDoc(doc(db, "entries", d.id), { accountName: newAcct });
+                                  }
+                                  showToast("科目を変更しました（帳簿にも反映済み）");
+                                  load();
+                                } catch (err) { console.error(err); showToast("科目の変更に失敗しました", "error"); }
+                              }}
+                              style={{ fontSize: 11, padding: "2px 4px", background: "#0F172A", border: "1px solid #334155", borderRadius: 4, color: "#E2E8F0", maxWidth: 130 }}
+                            >
+                              {accountList.filter((a) => a.type === "expense").map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+                            </select>
+                          </div>
+                        ) : inv.account ? (
+                          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>科目: {inv.account}</div>
+                        ) : null}
                         {inv.settledAt && <div style={{ fontSize: 11, color: "#10B981", marginTop: 2 }}>精算日: {fmtDate(inv.settledAt)}</div>}
                         {inv.receiptUrl && (() => {
                           const created = inv.createdAt ? toDate(inv.createdAt) : null;
