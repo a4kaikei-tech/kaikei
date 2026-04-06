@@ -1267,7 +1267,7 @@ function Ledger({ user, showToast }) {
               <tbody>
                 {filtered.map((e) => (
                   <tr key={e.id} style={{ borderTop: "1px solid #334155" }}>
-                    <td style={{ padding: "10px 14px", color: "#94A3B8", fontFamily: "'Space Mono',monospace", fontSize: 12 }}>{e.date}</td>
+                    <td style={{ padding: "10px 14px", color: "#94A3B8", fontFamily: "'Space Mono',monospace", fontSize: 12 }}>{e.createdAt ? fmtDate(e.createdAt) : e.date}</td>
                     <td style={{ padding: "10px 14px" }}>
                       <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: e.type === "income" ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)", color: e.type === "income" ? "#10B981" : "#F59E0B" }}>{e.type === "income" ? "収入" : "支出"}</span>
                     </td>
